@@ -1,9 +1,12 @@
+#!/usr/bin/env python3
+
 import carla
 import random
+import sys
 
 from implementation.configuration_parameter import *
-from implementation.carla_agent.navigation.basic_agent import BasicAgent
-
+from implementation.carla_client.carla_steering_algorithm import CarlaSteeringAlgorithm
+from implementation.monitor.carla_monitor import CarlaMonitor
 
 class CarlaControlClient(object):
 
@@ -16,8 +19,26 @@ class CarlaControlClient(object):
         self.leader_vehicle = None
         self.ego_vehicle = None
         self.leader_control_agent = None
+        self.carla_steering_algorithm_ego = None
+        self.carla_steering_algorithm_leader = None
+        self.carla_ego_control = carla.VehicleControl()
+        self.leader_control = carla.VehicleControl()
+
+        self.carla_monitor = None
+
+        self.scene_camera = None
 
         self.initialize_carla_client()
+        self.spawn_leader()
+        self.spawn_ego_vehicle()
+        self.setup_camera()
+        self.move_spectator()
+        self.carla_world.tick()  # tick once, to update actors
+
+        self.setup_lead_vehicle()
+        self.setup_ego_vehicle()
+
+        self.game_loop()
 
     def initialize_carla_client(self) -> None:
         """Creates the carla client, loads the world and sets the simulation to synchronous mode.
@@ -34,41 +55,61 @@ class CarlaControlClient(object):
 
         self.carla_world.apply_settings(self.settings)
 
-        self.traffic_manager = self.client.get_trafficmanager(TRAFFIC_MANAGER_PORT)
-        self.traffic_manager_port = self.traffic_manager.get_port()
+    def setup_lead_vehicle(self) -> None:
+        """Creates the steering algorithm for the leader vehicle"""
+        self.carla_steering_algorithm_leader = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.leader_vehicle)
 
-    def setup_lead_vehicle(self, vehicle: carla.Vehicle) -> None:
+    def setup_ego_vehicle(self) -> None:
+        self.carla_steering_algorithm_ego = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.ego_vehicle)
 
-        self.leader_control_agent = BasicAgent(self.leader_vehicle, target_speed=60)
-        self.leader_control_agent.proximity_tlight_threshold = -1 # ignores traffic lights
+    def move_spectator(self) -> None:
+        """Sets the spectator to the same transform as the scene camera."""
 
-        help_points = [
-            carla.Location(63, -190),
-            carla.Location(160, -167),
-            carla.Location(55, 191),
-            carla.Location(-37, 191)
-        ]
+        spectator = self.carla_world.get_spectator()
+        spectator.set_transform(self.scene_camera.get_transform())
 
-        self.leader_control_agent.set_destination(carla.Location(70, -186), 2, help_points)
+    def setup_camera(self) -> None:
+        blueprint = self.create_camera_blueprint()
+        transform = carla.Transform(
+            carla.Location(SCENE_CAMERA_LOCATION_X, SCENE_CAMERA_LOCATION_Y, SCENE_CAMERA_LOCATION_Z),
+            carla.Rotation(SCENE_CAMERA_ROTATION_PITCH, SCENE_CAMERA_ROTATION_YAW, SCENE_CAMERA_ROTATION_ROLL)
+        )
+        self.scene_camera = self.carla_world.spawn_actor(blueprint, transform, self.ego_vehicle)
 
+    def create_camera_blueprint(self) -> carla.Blueprint:
+        """Creates the carla blueprint for the scene camera
+        :return carla.Blueprint
+        """
+        bp_library = self.carla_world.get_blueprint_library()
+        blueprint = bp_library.find("sensor.camera.rgb")
+        blueprint.set_attribute('image_size_x', str(PYGAME_WINDOW_WIDTH))
+        blueprint.set_attribute('image_size_y', str(PYGAME_WINDOW_HEIGHT))
 
-    def set_weather(self, weather: carla.WeatherPreset) -> None:
-        self.carla_world.set_weather(weather)
+        blueprint.set_attribute('role_name', "scene_camera")
+        blueprint.set_attribute('blur_amount', str(0.5))
+        blueprint.set_attribute('motion_blur_intensity', str(0.225))
+        blueprint.set_attribute('motion_blur_max_distortion', str(0.175))
+        blueprint.set_attribute('motion_blur_min_object_screen_size', str(0.05))
+        return blueprint
 
     def switch_weather(self) -> None:
+        """Changes the weather between sunshine and rain
+        :return:
+        """
         if self.raining:
-            self.set_weather(carla.WeatherParameters.ClearNoon)
+            self.carla_world.set_weather(carla.WeatherParameters.ClearNoon)
         else:
-            self.set_weather(carla.WeatherParameters.WetNoon)
+            self.carla_world.set_weather(carla.WeatherParameters.WetNoon)
 
     def spawn_leader(self) -> None:
+
         blueprint_library = self.carla_world.get_blueprint_library()
         spawn_point = carla.Transform()
-        spawn_point.location.x = 29.0
-        spawn_point.location.y = -190.0
-        spawn_point.location.z = 1.0
+        spawn_point.location.x = LEADER_SPAWN_LOCATION_X
+        spawn_point.location.y = LEADER_SPAWN_LOCATION_Y
+        spawn_point.location.z = LEADER_SPAWN_LOCATION_Z
 
-        spawn_point.rotation.yaw = 0.0
+        spawn_point.rotation.yaw = LEADER_SPAWN_ROTATION_YAW
 
         blueprint = random.choice(blueprint_library.filter('vehicle.bmw.*'))
 
@@ -78,11 +119,11 @@ class CarlaControlClient(object):
     def spawn_ego_vehicle(self) -> None:
         blueprint_library = self.carla_world.get_blueprint_library()
         spawn_point = carla.Transform()
-        spawn_point.location.x = 39.0
-        spawn_point.location.y = -190.0
-        spawn_point.location.z = 1.0
+        spawn_point.location.x = EGO_SPAWN_LOCATION_X
+        spawn_point.location.y = EGO_SPAWN_LOCATION_Y
+        spawn_point.location.z = EGO_SPAWN_LOCATION_Z
 
-        spawn_point.rotation.yaw = 0.0
+        spawn_point.rotation.yaw = EGO_SPAWN_ROTATION_YAW
 
         blueprint = random.choice(blueprint_library.filter('vehicle.audi.*'))
 
@@ -91,5 +132,80 @@ class CarlaControlClient(object):
 
     def game_loop(self) -> None:
 
-        while True:
-            world_snapshot = self.carla_world.tick()
+        running = True
+        while running:
+            try:
+                world_snapshot = self.carla_world.tick()
+
+                if MOVE_SPECTATOR:
+                    self.move_spectator()
+
+                leader_control_command = None
+                if self.leader_control_agent:
+                    leader_control_command = self.leader_control_agent.run_step()
+                if leader_control_command:
+                    self.leader_vehicle.apply_control(leader_control_command)
+
+                self.leader_control.steer = self.carla_steering_algorithm_leader.goToNextTargetLocation()
+                self.leader_control.throttle = 0.5
+                self.leader_vehicle.apply_control(self.leader_control)
+
+                self.carla_ego_control.steer = self.carla_steering_algorithm_ego.goToNextTargetLocation()
+                self.carla_ego_control.throttle = 0.6
+                self.ego_vehicle.apply_control(self.carla_ego_control)
+
+            except KeyboardInterrupt:
+                running = False
+                self.exit_client()
+            except Exception as error:
+                running = False
+                import traceback
+                print(error)
+                traceback.print_exc()
+
+        self.exit_client()
+
+    def reset_simulation(self):
+        if self.scene_camera is not None:
+            self.scene_camera.destroy()
+            self.scene_camera = None
+        if self.ego_vehicle is not None:
+            self.ego_vehicle.destroy()
+            self.ego_vehicle = None
+        if self.leader_vehicle is not None:
+            self.leader_vehicle.destroy()
+            self.leader_vehicle = None
+        if self.leader_control_agent is not None:
+            self.leader_control_agent = None
+
+    def exit_client(self):
+
+        print("Exiting client")
+
+        self.reset_simulation()
+
+        settings = self.carla_world.get_settings()
+        settings.synchronous_mode = False
+        settings.fixed_delta_seconds = 0  # set to 0 -> server default
+        settings.no_rendering_mode = False
+        self.carla_world.apply_settings(settings)
+        self.carla_world.wait_for_tick()
+
+
+if __name__ == '__main__':
+    carla_control_client = None
+    try:
+        carla_control_client = CarlaControlClient()
+    except Exception as e:
+        print("Error executing Control Client.", e)
+        import traceback
+        import logging
+        traceback.print_exc()
+        logging.error(e)
+    except KeyboardInterrupt as e:
+        if carla_control_client:
+            carla_control_client.exit_client()
+        sys.exit()
+    finally:
+        if carla_control_client:
+            carla_control_client.exit_client()
