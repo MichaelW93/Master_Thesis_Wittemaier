@@ -1,15 +1,16 @@
 """ This file contains all configuration parameter for the simulation"""
 
+"""Carla Parameter"""
 CARLA_SERVER_PORT: int = 2000
 CARLA_SERVER_HOST: str = "localhost"
 CARLA_SERVER_FPS: int = 20
 TRAFFIC_MANAGER_PORT: int = 8000
 
-SCENE_CAMERA_LOCATION_X: float = 0.0
+SCENE_CAMERA_LOCATION_X: float = -10
 SCENE_CAMERA_LOCATION_Y: float = 0.0
-SCENE_CAMERA_LOCATION_Z: float = 20.0
+SCENE_CAMERA_LOCATION_Z: float = 10.0
 
-SCENE_CAMERA_ROTATION_PITCH: float = -45.0
+SCENE_CAMERA_ROTATION_PITCH: float = -20.0
 SCENE_CAMERA_ROTATION_YAW: float = 0.0
 SCENE_CAMERA_ROTATION_ROLL: float = 0.0
 
@@ -29,4 +30,11 @@ ANTI_ALIASING: bool = True
 SHOW_FPS: bool = True
 
 DEBUG_MODE: bool = False
-MOVE_SPECTATOR: bool = False
+MOVE_SPECTATOR: bool = True
+
+"""Safety Parameter"""
+EGO_SPEED_RANGE: float = 1.0
+EGO_ACCELERATION_RANGE: float = 0.1
+OTHER_ACCELERATION_RANGE: float = 0.1
+OTHER_VELOCITY_RANGE: float = 1.0
+CONNECTION_STRENGTH_RANGE: float = 10

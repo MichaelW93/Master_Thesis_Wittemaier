@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
-
 import carla
 import random
 import sys
+import pygame
 
 from implementation.configuration_parameter import *
 from implementation.carla_client.carla_steering_algorithm import CarlaSteeringAlgorithm
@@ -11,20 +10,19 @@ from implementation.monitor.carla_monitor import CarlaMonitor
 class CarlaControlClient(object):
 
     def __init__(self):
-        self.client = None
-        self.carla_world = None
-        self.settings = None
-        self.raining = False
+        self.client: carla.Client = None
+        self.carla_world: carla.World = None
+        self.settings: carla.Settings = None
+        self.raining: bool = False
 
-        self.leader_vehicle = None
-        self.ego_vehicle = None
-        self.leader_control_agent = None
-        self.carla_steering_algorithm_ego = None
-        self.carla_steering_algorithm_leader = None
+        self.pygame_clock = pygame.time.Clock()
+
+        self.leader_vehicle: carla.Vehicle = None
+        self.ego_vehicle: carla.Vehicle = None
+        self.carla_steering_algorithm_ego: CarlaSteeringAlgorithm = None
+        self.carla_steering_algorithm_leader: CarlaSteeringAlgorithm = None
         self.carla_ego_control = carla.VehicleControl()
         self.leader_control = carla.VehicleControl()
-
-        self.carla_monitor = None
 
         self.scene_camera = None
 
@@ -37,6 +35,11 @@ class CarlaControlClient(object):
 
         self.setup_lead_vehicle()
         self.setup_ego_vehicle()
+
+        self.carla_monitor: CarlaMonitor = CarlaMonitor(self.carla_world, self.ego_vehicle, self.leader_vehicle)
+
+        self.speed_limit: float = 60.0
+        self.connection_strength: float = 100.0
 
         self.game_loop()
 
@@ -76,7 +79,7 @@ class CarlaControlClient(object):
         )
         self.scene_camera = self.carla_world.spawn_actor(blueprint, transform, self.ego_vehicle)
 
-    def create_camera_blueprint(self) -> carla.Blueprint:
+    def create_camera_blueprint(self) -> carla.ActorBlueprint:
         """Creates the carla blueprint for the scene camera
         :return carla.Blueprint
         """
@@ -135,7 +138,10 @@ class CarlaControlClient(object):
         running = True
         while running:
             try:
+                self.pygame_clock.tick_busy_loop(CARLA_SERVER_FPS)
                 world_snapshot = self.carla_world.tick()
+
+                self.carla_monitor.run_step(world_snapshot.timestamp)
 
                 if MOVE_SPECTATOR:
                     self.move_spectator()
