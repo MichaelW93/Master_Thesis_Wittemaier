@@ -2,6 +2,7 @@ import carla
 
 from implementation.knowledge.environment_knowledge import EnvironmentKnowledge
 from implementation.knowledge.base_attribute import *
+from implementation.carla_client.simulation_state import SimulationState
 
 
 class CarlaMonitor(object):
@@ -11,36 +12,40 @@ class CarlaMonitor(object):
         self.leader_vehicle = leader_vehicle
         self.carla_world = carla_world
 
-    def run_step(self, timestamp: carla.Timestamp, connection_strength: float,
-                 leader_emergency_brake: bool, speed_limit: float):
-        environment_knowledge = self.create_environment_knowledge(timestamp, connection_strength,
-                                                                  leader_emergency_brake, speed_limit)
+    def run_step(self, timestamp: carla.Timestamp, simulation_state):
+        environment_knowledge = self.create_environment_knowledge(timestamp, simulation_state)
 
         if DEBUG_MODE:
             print(environment_knowledge)
 
-    def create_environment_knowledge(self, timestamp: carla.Timestamp, connection_strength: float,
-                 leader_emergency_brake: bool, speed_limit: float) -> EnvironmentKnowledge:
+    def create_environment_knowledge(self, timestamp: carla.Timestamp, simulation_state: SimulationState) -> EnvironmentKnowledge:
 
         environment_knowledge = EnvironmentKnowledge()
         environment_knowledge.timestamp = timestamp
-        environment_knowledge.connection_strength = connection_strength
+        environment_knowledge.connection_strength = simulation_state.connection_strength
 
-        environment_knowledge.ego_velocity = self.__process_ego_velocity()
-        environment_knowledge.ego_acceleration = self.__process_ego_acceleration()
-        environment_knowledge.ego_distance = self.__process_ego_distance()
+        if simulation_state.ego_speed_available:
+            environment_knowledge.ego_speed = self.__process_ego_speed()
+        if simulation_state.ego_acceleration_available:
+            environment_knowledge.ego_acceleration = self.__process_ego_acceleration()
+        if simulation_state.ego_distance_available:
+            environment_knowledge.ego_distance = self.__process_ego_distance()
 
-        environment_knowledge.other_acceleration = self.__process_other_acceleration()
-        environment_knowledge.other_velocity = self.__process_other_velocity()
-        environment_knowledge.other_braking_light = self.__process_other_braking_light()
-        environment_knowledge.other_emergency_brake = leader_emergency_brake
+        if simulation_state.other_acceleration_available:
+            environment_knowledge.other_acceleration = self.__process_other_acceleration()
+        if simulation_state.other_speed_available:
+            environment_knowledge.other_speed = self.__process_other_speed()
+        if simulation_state.other_braking_light_available:
+            environment_knowledge.other_braking_light = self.__process_other_braking_light()
+        if simulation_state.other_emergency_brake_available:
+            environment_knowledge.other_emergency_brake = simulation_state.other_emergency_brake_available
 
-        environment_knowledge.speed_limit = speed_limit
+        environment_knowledge.speed_limit = simulation_state.speed_limit
         environment_knowledge.weather = self.__process_weather()
 
         return environment_knowledge
 
-    def __process_ego_velocity(self) -> tuple:
+    def __process_ego_speed(self) -> tuple:
 
         current_ego_velocity = self.ego_vehicle.get_velocity()
         ego_speed = (self.calculate_vehicle_speed(current_ego_velocity), EGO_SPEED_RANGE)
@@ -66,10 +71,10 @@ class CarlaMonitor(object):
 
     def __process_other_braking_light(self) -> bool:
         light_state = self.leader_vehicle.get_light_state()
-        braking_light = light_state.brake
+        braking_light = light_state.Brake
         return braking_light
 
-    def __process_other_velocity(self) -> tuple:
+    def __process_other_speed(self) -> tuple:
         other_current_velocity = self.leader_vehicle.get_velocity()
         other_speed = (self.calculate_vehicle_speed(other_current_velocity), OTHER_VELOCITY_RANGE)
         return other_speed

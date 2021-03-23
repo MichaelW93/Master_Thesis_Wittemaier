@@ -49,3 +49,4 @@ class ConnectionStrength(BaseAttribute):
 class Weather(Enum):
     SUNSHINE = 1
     RAIN = 2
+    FOG = 3

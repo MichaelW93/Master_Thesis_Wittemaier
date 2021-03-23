@@ -2,10 +2,14 @@ import carla
 import random
 import sys
 import pygame
+import threading
+import queue
 
 from implementation.configuration_parameter import *
 from implementation.carla_client.carla_steering_algorithm import CarlaSteeringAlgorithm
 from implementation.monitor.carla_monitor import CarlaMonitor
+from implementation.carla_client.user_control_window import UserControlWindow
+from implementation.carla_client.simulation_state import SimulationState
 
 class CarlaControlClient(object):
 
@@ -16,6 +20,8 @@ class CarlaControlClient(object):
         self.raining: bool = False
 
         self.pygame_clock = pygame.time.Clock()
+        self.window_control_queue = queue.Queue()
+        self.user_control_window: UserControlWindow = UserControlWindow(self.window_control_queue)
 
         self.leader_vehicle: carla.Vehicle = None
         self.ego_vehicle: carla.Vehicle = None
@@ -24,7 +30,19 @@ class CarlaControlClient(object):
         self.carla_ego_control = carla.VehicleControl()
         self.leader_control = carla.VehicleControl()
 
+        self.leader_perform_emergency_brake = False
+
+        self.carla_monitor: CarlaMonitor = None
+        self.simulation_state: SimulationState = None
+
+        self.user_control_window_thread: threading.Thread = None
+
         self.scene_camera = None
+
+        self.setup_simulation()
+        self.game_loop()
+
+    def setup_simulation(self):
 
         self.initialize_carla_client()
         self.spawn_leader()
@@ -36,12 +54,16 @@ class CarlaControlClient(object):
         self.setup_lead_vehicle()
         self.setup_ego_vehicle()
 
-        self.carla_monitor: CarlaMonitor = CarlaMonitor(self.carla_world, self.ego_vehicle, self.leader_vehicle)
+        self.carla_monitor = CarlaMonitor(self.carla_world, self.ego_vehicle, self.leader_vehicle)
 
-        self.speed_limit: float = 60.0
-        self.connection_strength: float = 100.0
+        default_simulation_state = SimulationState()
+        self.simulation_state = default_simulation_state
 
-        self.game_loop()
+        self.user_control_window_thread = threading.Thread(target=self.user_control_window_thread_execution)
+        self.user_control_window_thread.start()
+
+    def user_control_window_thread_execution(self):
+        self.user_control_window.window_loop()
 
     def initialize_carla_client(self) -> None:
         """Creates the carla client, loads the world and sets the simulation to synchronous mode.
@@ -69,7 +91,8 @@ class CarlaControlClient(object):
         """Sets the spectator to the same transform as the scene camera."""
 
         spectator = self.carla_world.get_spectator()
-        spectator.set_transform(self.scene_camera.get_transform())
+        if spectator is not None and self.scene_camera is not None:
+            spectator.set_transform(self.scene_camera.get_transform())
 
     def setup_camera(self) -> None:
         blueprint = self.create_camera_blueprint()
@@ -138,27 +161,37 @@ class CarlaControlClient(object):
         running = True
         while running:
             try:
+
+                if not self.window_control_queue.empty():
+                    event = self.window_control_queue.get(False)
+                    if isinstance(event, SimulationState):
+                        self.simulation_state = event
+                    elif event == "EXIT":
+                        self.exit_client()
+                    elif event == "RESET":
+                        self.reset_simulation()
                 self.pygame_clock.tick_busy_loop(CARLA_SERVER_FPS)
                 world_snapshot = self.carla_world.tick()
 
-                self.carla_monitor.run_step(world_snapshot.timestamp)
+                #self.carla_monitor.run_step(world_snapshot.timestamp, self.simulation_state)
 
                 if MOVE_SPECTATOR:
                     self.move_spectator()
 
-                leader_control_command = None
-                if self.leader_control_agent:
-                    leader_control_command = self.leader_control_agent.run_step()
-                if leader_control_command:
-                    self.leader_vehicle.apply_control(leader_control_command)
+                if self.carla_steering_algorithm_leader is not None and self.leader_vehicle is not None:
+                    self.leader_control.steer = self.carla_steering_algorithm_leader.goToNextTargetLocation()
+                    self.leader_control.throttle = 0.5
+                    self.leader_control.brake = 0.0
+                    if self.leader_perform_emergency_brake:
+                        self.leader_vehicle.set_light_state(carla.VehicleLightState.Brake)
+                        self.leader_control.throttle = 0.0
+                        self.leader_control.brake = 1.0
+                    self.leader_vehicle.apply_control(self.leader_control)
 
-                self.leader_control.steer = self.carla_steering_algorithm_leader.goToNextTargetLocation()
-                self.leader_control.throttle = 0.5
-                self.leader_vehicle.apply_control(self.leader_control)
-
-                self.carla_ego_control.steer = self.carla_steering_algorithm_ego.goToNextTargetLocation()
-                self.carla_ego_control.throttle = 0.6
-                self.ego_vehicle.apply_control(self.carla_ego_control)
+                if self.carla_steering_algorithm_ego is not None and self.ego_vehicle is not None:
+                    self.carla_ego_control.steer = self.carla_steering_algorithm_ego.goToNextTargetLocation()
+                    self.carla_ego_control.throttle = 0.6
+                    self.ego_vehicle.apply_control(self.carla_ego_control)
 
             except KeyboardInterrupt:
                 running = False
@@ -171,7 +204,7 @@ class CarlaControlClient(object):
 
         self.exit_client()
 
-    def reset_simulation(self):
+    def reset_simulation(self) -> None:
         if self.scene_camera is not None:
             self.scene_camera.destroy()
             self.scene_camera = None
@@ -181,14 +214,26 @@ class CarlaControlClient(object):
         if self.leader_vehicle is not None:
             self.leader_vehicle.destroy()
             self.leader_vehicle = None
-        if self.leader_control_agent is not None:
-            self.leader_control_agent = None
+        if self.carla_steering_algorithm_leader is not None:
+            self.carla_steering_algorithm_leader = None
+        if self.carla_steering_algorithm_ego is not None:
+            self.carla_steering_algorithm_ego = None
+        if self.carla_monitor is not None:
+            self.carla_monitor = None
 
-    def exit_client(self):
+        self.setup_simulation()
+
+    def exit_client(self) -> None:
 
         print("Exiting client")
 
         self.reset_simulation()
+
+        if self.user_control_window is not None:
+            self.user_control_window.exit_window()
+            self.user_control_window_thread.join()
+            self.user_control_window_thread = None
+            self.user_control_window = None
 
         settings = self.carla_world.get_settings()
         settings.synchronous_mode = False
