@@ -12,7 +12,7 @@ class SimulationState(object):
         self.other_acceleration_available: bool = True
         self.other_emergency_brake_available: bool = True
         self.other_braking_light_available: bool = True
-        self.other_perform_emergency_brake: bool = True
+        self.other_perform_emergency_brake: bool = False
 
         self.leader_speed: float = 60.0
 

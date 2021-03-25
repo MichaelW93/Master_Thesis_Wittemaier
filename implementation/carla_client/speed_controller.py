@@ -30,11 +30,10 @@ class VehiclePIDController(object):
         """
 
         self.max_brake = max_brake
-        self.max_throt = max_throttle
+        self.max_throttle = max_throttle
 
         self._vehicle = vehicle
         self._world = self._vehicle.get_world()
-        self.past_steering = self._vehicle.get_control().steer
         self._lon_controller = PIDLongitudinalController(self._vehicle, **args_longitudinal)
 
     def run_step(self, target_speed):
@@ -51,7 +50,7 @@ class VehiclePIDController(object):
         acceleration = self._lon_controller.run_step(target_speed)
         control = carla.VehicleControl()
         if acceleration >= 0.0:
-            control.throttle = min(acceleration, self.max_throt)
+            control.throttle = min(acceleration, self.max_throttle)
             control.brake = 0.0
         else:
             control.throttle = 0.0

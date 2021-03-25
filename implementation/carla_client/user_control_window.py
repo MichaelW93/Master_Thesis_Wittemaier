@@ -49,8 +49,8 @@ class UserControlWindow(object):
         while self.simulation_running:
             event, values = self.window.read()
 
-            print(event)
-            print(values)
+            if DEBUG_MODE:
+                print(values)
 
             if event == sg.WIN_CLOSED:
                 break
@@ -76,9 +76,9 @@ class UserControlWindow(object):
         simulation_state.other_emergency_brake_available = values["-OTHER_EMERGENCY_BRAKE-"]
         simulation_state.other_braking_light_available = values["-OTHER_BRAKING_LIGHT-"]
         simulation_state.other_perform_emergency_brake = values["-PERFORM_EMERGENCY_BRAKE-"]
-        simulation_state.leader_speed = values["-LEADER_SPEED-"]
-        simulation_state.speed_limit = values["-SPEED_LIMIT-"]
-        simulation_state.connection_strength = values["-CONNECTION_STRENGTH-"]
+        simulation_state.leader_speed = float(values["-LEADER_SPEED-"])
+        simulation_state.speed_limit = float(values["-SPEED_LIMIT-"])
+        simulation_state.connection_strength = float(values["-CONNECTION_STRENGTH-"])
 
         if values["-SUNSHINE-"]:
             simulation_state.weather = Weather(1)

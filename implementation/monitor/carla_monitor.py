@@ -1,4 +1,5 @@
 import carla
+import math
 
 from implementation.knowledge.environment_knowledge import EnvironmentKnowledge
 from implementation.knowledge.base_attribute import *
@@ -15,8 +16,9 @@ class CarlaMonitor(object):
     def run_step(self, timestamp: carla.Timestamp, simulation_state):
         environment_knowledge = self.create_environment_knowledge(timestamp, simulation_state)
 
+        print(environment_knowledge.__str__())
         if DEBUG_MODE:
-            print(environment_knowledge)
+            print(environment_knowledge.__str__())
 
     def create_environment_knowledge(self, timestamp: carla.Timestamp, simulation_state: SimulationState) -> EnvironmentKnowledge:
 
@@ -53,8 +55,8 @@ class CarlaMonitor(object):
 
     def __process_ego_acceleration(self) -> tuple:
 
-        current_ego_acceleration = self.ego_vehicle.get_accelaration()
-        ego_acceleration = (current_ego_acceleration, EGO_ACCELERATION_RANGE)
+        current_ego_acceleration = self.ego_vehicle.get_acceleration()
+        ego_acceleration = (self.calculate_vehicle_acceleration(current_ego_acceleration), EGO_ACCELERATION_RANGE)
         return ego_acceleration
 
     def __process_ego_distance(self) -> float:
@@ -65,8 +67,8 @@ class CarlaMonitor(object):
         pass
 
     def __process_other_acceleration(self) -> tuple:
-        current_ego_acceleration = self.leader_vehicle.get_accelaration()
-        leader_acceleration = (current_ego_acceleration, EGO_ACCELERATION_RANGE)
+        current_ego_acceleration = self.leader_vehicle.get_acceleration()
+        leader_acceleration = (self.calculate_vehicle_acceleration(current_ego_acceleration), EGO_ACCELERATION_RANGE)
         return leader_acceleration
 
     def __process_other_braking_light(self) -> bool:
@@ -98,15 +100,24 @@ class CarlaMonitor(object):
             self.carla_world = None
 
     def calculate_vehicle_speed(self, velocity: carla.Vector3D) -> float:
-        """Takes an carla velocity vector and transforms it into an speed value [m/]
+        """Takes an carla velocity vector and transforms it into an speed value [m/s]
         :param velocity: velocity vector
         :type velocity: carla.Vector3D
         :return: speed of vector in [m/s]
         :rtype: float
         """
 
-        speed = velocity.x * 2 + velocity.y * 2 + velocity.z * 2
-        return speed
+        return math.sqrt(velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2)
+
+    def calculate_vehicle_acceleration(self, acceleration: carla.Vector3D) -> float:
+        """Takes an carla acceleartion vector and transforms it into an acceleration value [m/(s²)]
+        :param acceleration: velocity vector
+        :type acceleration: carla.Vector3D
+        :return: speed of vector in [m/s]
+        :rtype: float
+        """
+
+        return math.sqrt(acceleration.x ** 2)
 
     def destroy(self):
         pass
