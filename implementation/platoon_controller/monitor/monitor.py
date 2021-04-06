@@ -3,19 +3,13 @@ import math
 
 from typing import Optional, Tuple
 
-from implementation.knowledge.environment_knowledge import EnvironmentKnowledge
-from implementation.knowledge.base_attribute import *
-from implementation.carla_client.simulation_state import SimulationState
-from implementation.monitor.monitor_input_data import MonitorInputData
+from implementation.platoon_controller.knowledge.base_attribute import *
+from implementation.data_classes import EnvironmentKnowledge, MonitorInputData
 
 
-class CarlaMonitor(object):
+class Monitor(object):
 
-    def __init__(self, carla_world: carla.World, ego_vehicle: carla.Vehicle, leader_vehicle: carla.Vehicle) -> None:
-        self.ego_vehicle = ego_vehicle
-        self.leader_vehicle = leader_vehicle
-        self.carla_world = carla_world
-
+    def __init__(self) -> None:
         self.leader_acceleration = None
         self.ego_acceleration = None
         self.ego_distance = None
@@ -23,12 +17,11 @@ class CarlaMonitor(object):
 
     def run_step(self, monitor_input_data: MonitorInputData):
 
-        if self.ego_vehicle is not None and self.leader_vehicle is not None:
-            environment_knowledge = self.create_environment_knowledge(monitor_input_data)
+        environment_knowledge = self.create_environment_knowledge(monitor_input_data)
 
+        print(environment_knowledge.__str__())
+        if DEBUG_MODE:
             print(environment_knowledge.__str__())
-            if DEBUG_MODE:
-                print(environment_knowledge.__str__())
 
     def create_environment_knowledge(self, monitor_input_data: MonitorInputData) -> EnvironmentKnowledge:
 
@@ -110,14 +103,6 @@ class CarlaMonitor(object):
             return Weather.RAIN
         else:
             return Weather.SUNSHINE
-
-    def reset(self) -> None:
-        if self.ego_vehicle is not None:
-            self.ego_vehicle = None
-        if self.leader_vehicle is not None:
-            self.leader_vehicle = None
-        if self.carla_world is not None:
-            self.carla_world = None
 
     def calculate_vehicle_speed(self, velocity: carla.Vector3D) -> float:
         """Takes an carla velocity vector and transforms it into an speed value [m/s]

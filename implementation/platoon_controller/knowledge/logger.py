@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from implementation.knowledge.environment_knowledge import EnvironmentKnowledge
+from implementation.data_classes import EnvironmentKnowledge
 
 class Logger(object):
 

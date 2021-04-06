@@ -2,8 +2,8 @@ import PySimpleGUI as sg
 
 from queue import Queue
 from implementation.configuration_parameter import *
-from implementation.carla_client.simulation_state import SimulationState
-from implementation.knowledge.base_attribute import Weather
+from implementation.data_classes import SimulationState
+from implementation.platoon_controller.knowledge.base_attribute import Weather
 
 class UserControlWindow(object):
     """Creates the Pygame Window, which is used as control panel for the user to change the simulation"""

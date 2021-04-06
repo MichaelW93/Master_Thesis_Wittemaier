@@ -2,7 +2,7 @@ import carla
 
 from typing import Optional
 
-from implementation.knowledge.base_attribute import *
+from implementation.platoon_controller.knowledge.base_attribute import *
 
 
 class EnvironmentKnowledge(object):
@@ -38,3 +38,42 @@ class EnvironmentKnowledge(object):
             f"Weather: {self.weather}"
             )
         return string
+
+
+class SimulationState(object):
+
+    def __init__(self):
+        self.ego_speed_available: bool = True
+        self.ego_acceleration_available: bool = True
+        self.ego_distance_available: bool = True
+
+        self.other_speed_available: bool = True
+        self.other_acceleration_available: bool = True
+        self.other_emergency_brake_available: bool = True
+        self.other_braking_light_available: bool = True
+        self.other_perform_emergency_brake: bool = False
+
+        self.leader_speed: float = 60.0
+
+        self.speed_limit: float = 60.0
+        self.connection_strength: float = 100.0
+        self.weather: Weather = Weather(1)
+
+
+class MonitorInputData(object):
+
+    def __init__(self, timestamp: carla.Timestamp):
+        self.timestamp = timestamp
+
+        self.connection_strength: float = None
+        self.speed_limit: float = None
+        self.weather = None
+
+        self.ego_acceleration: carla.IMUMeasurement = None
+        self.ego_distance: carla.ObstacleDetectionEvent = None
+        self.ego_speed: float = None
+        self.other_braking_light: bool = None
+
+        self.other_acceleration: carla.IMUMeasurement = None
+        self.other_speed: float = None
+        self.other_emergency_brake: bool = None

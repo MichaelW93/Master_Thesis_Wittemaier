@@ -1,10 +1,8 @@
 import carla
 import math
 from typing import Optional
-from implementation.configuration_parameter import *
-from implementation.carla_client.simulation_state import SimulationState
-from implementation.monitor.monitor_input_data import MonitorInputData
-from implementation.knowledge.base_attribute import *
+from implementation.data_classes import SimulationState, MonitorInputData
+from implementation.platoon_controller.knowledge.base_attribute import *
 
 
 class DataProvider(object):
