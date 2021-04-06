@@ -9,6 +9,7 @@ class CarlaSteeringAlgorithm(object):
     def __init__(self, map, vehicle):
         self.__map = map
         self.__vehicle = vehicle
+        self.__next_waypoint = None
 
     def goToNextTargetLocation(self):
         ######
@@ -46,7 +47,14 @@ class CarlaSteeringAlgorithm(object):
         current_waypoint = self.__map.get_waypoint(current_location, project_to_road=True,
                                                    lane_type=carla.LaneType.Driving)
         # print(current_waypoint)
-        target = current_waypoint.next(8.0)
+        if self.__next_waypoint is not None:
+            if current_waypoint == self.__next_waypoint:
+                target = current_waypoint.next(8.0)
+                self.__next_waypoint = None
+            else:
+                target = self.__next_waypoint
+        else:
+            target = current_waypoint.next(8.0)
         # for i in target:
         #     print(i)
         target_position = target[0].transform.location
@@ -147,3 +155,6 @@ class CarlaSteeringAlgorithm(object):
             spherical_vector.z += 2 * (0.5 * math.pi - spherical_vector.z) + math.pi
 
         return spherical_vector
+
+    def set_next_waypoint(self, waypoint):
+        self.__next_waypoint = waypoint

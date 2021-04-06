@@ -8,7 +8,9 @@ import queue
 from implementation.configuration_parameter import *
 from implementation.carla_client.carla_steering_algorithm import CarlaSteeringAlgorithm
 from implementation.monitor.carla_monitor import CarlaMonitor
+from implementation.monitor.data_provider import DataProvider
 from implementation.carla_client.user_control_window import UserControlWindow
+from implementation.carla_client.manual_control import *
 from implementation.carla_client.simulation_state import SimulationState
 from implementation.carla_client.speed_controller import VehiclePIDController
 from implementation.knowledge.base_attribute import Weather
@@ -16,31 +18,38 @@ from implementation.knowledge.base_attribute import Weather
 class CarlaControlClient(object):
 
     def __init__(self):
-        self.client: carla.Client = None
+        self.carla_client: carla.Client = None
         self.carla_world: carla.World = None
+        self.carla_map: carla.Map = None
         self.settings: carla.Settings = None
         self.raining: bool = False
 
         self.pygame_clock = pygame.time.Clock()
         self.window_control_queue = queue.Queue()
         self.user_control_window: UserControlWindow = UserControlWindow(self.window_control_queue)
+        self.manual_control_window: ManualControlWindow = None
 
         self.leader_vehicle: carla.Vehicle = None
-        self.ego_vehicle: carla.Vehicle = None
-        self.carla_steering_algorithm_ego: CarlaSteeringAlgorithm = None
         self.carla_steering_algorithm_leader: CarlaSteeringAlgorithm = None
-        self.carla_ego_control = carla.VehicleControl()
+        self.leader_vehicle_imu: carla.Sensor = None
+        self.leader_speed_controller: VehiclePIDController = None
         self.leader_control = carla.VehicleControl()
 
-        self.leader_speed_controller: VehiclePIDController = None
+        self.ego_vehicle: carla.Vehicle = None
+        self.carla_steering_algorithm_ego: CarlaSteeringAlgorithm = None
+        self.ego_vehicle_obstacle_detection = None
+        self.ego_vehicle_imu: carla.Sensor = None
+        self.carla_ego_control = carla.VehicleControl()
         self.ego_speed_controller: VehiclePIDController = None
 
         self.carla_monitor: CarlaMonitor = None
+        self.data_provider: DataProvider = None
         self.simulation_state: SimulationState = None
 
         self.user_control_window_thread: threading.Thread = None
 
         self.scene_camera = None
+        self.leader_camera = None
 
         self.setup_simulation()
         self.game_loop()
@@ -50,17 +59,21 @@ class CarlaControlClient(object):
         self.initialize_carla_client()
         self.spawn_leader()
         self.spawn_ego_vehicle()
-        self.setup_camera()
+        self.carla_monitor = CarlaMonitor(self.carla_world, self.ego_vehicle, self.leader_vehicle)
+        self.data_provider = DataProvider(self.ego_vehicle, self.leader_vehicle, self.carla_world)
+        self.scene_camera = self.setup_camera(self.ego_vehicle)
+        self.leader_camera = self.setup_camera(self.leader_vehicle)
         self.move_spectator()
         self.carla_world.tick()  # tick once, to update actors
 
         self.setup_lead_vehicle()
         self.setup_ego_vehicle()
 
-        self.carla_monitor = CarlaMonitor(self.carla_world, self.ego_vehicle, self.leader_vehicle)
-
         default_simulation_state = SimulationState()
         self.simulation_state = default_simulation_state
+
+        self.manual_control_window = ManualControlWindow(self.carla_world, self.carla_map, self.leader_vehicle,
+                                                         self.leader_camera, self.carla_client)
 
         self.user_control_window_thread = threading.Thread(target=self.user_control_window_thread_execution)
         self.user_control_window_thread.start()
@@ -73,9 +86,10 @@ class CarlaControlClient(object):
         :return:
         """
 
-        self.client = carla.Client(CARLA_SERVER_HOST, CARLA_SERVER_PORT)
-        self.client.load_world("Town05")
-        self.carla_world = self.client.get_world()
+        self.carla_client = carla.Client(CARLA_SERVER_HOST, CARLA_SERVER_PORT)
+        self.carla_client.load_world("Town05")
+        self.carla_world = self.carla_client.get_world()
+        self.carla_map = self.carla_world.get_map()
 
         self.settings = self.carla_world.get_settings()
         self.settings.synchronous_mode = True
@@ -91,8 +105,14 @@ class CarlaControlClient(object):
             'K_I': LEADER_CONTROLLER_KI,
             'dt': 1/CARLA_SERVER_FPS
         }
-        self.carla_steering_algorithm_leader = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.leader_vehicle)
+        self.carla_steering_algorithm_leader = CarlaSteeringAlgorithm(self.carla_map, self.leader_vehicle)
         self.leader_speed_controller = VehiclePIDController(self.leader_vehicle, args_long_dict)
+
+        blueprint_library = self.carla_world.get_blueprint_library()
+        blueprint = blueprint_library.find("sensor.other.imu")
+        self.leader_vehicle_imu = self.carla_world.spawn_actor(blueprint, carla.Transform(), self.leader_vehicle)
+        self.leader_vehicle_imu.listen(lambda sensor_data: self.data_provider.update_other_acceleration(sensor_data))
+
 
     def setup_ego_vehicle(self) -> None:
         args_long_dict = {
@@ -101,8 +121,23 @@ class CarlaControlClient(object):
             'K_I': EGO_CONTROLLER_KI,
             'dt': 1 / CARLA_SERVER_FPS
         }
-        self.carla_steering_algorithm_ego = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.ego_vehicle)
+        self.carla_steering_algorithm_ego = CarlaSteeringAlgorithm(self.carla_map, self.ego_vehicle)
         self.ego_speed_controller = VehiclePIDController(self.ego_vehicle, args_long_dict)
+
+        blueprint_library = self.carla_world.get_blueprint_library()
+        blueprint = blueprint_library.find("sensor.other.imu")
+        self.ego_vehicle_imu = self.carla_world.spawn_actor(blueprint, carla.Transform(), self.ego_vehicle)
+        self.ego_vehicle_imu.listen(lambda sensor_data: self.data_provider.update_ego_acceleration(sensor_data))
+
+        blueprint = blueprint_library.find("sensor.other.obstacle")
+        blueprint.set_attribute("distance", str(50))
+        blueprint.set_attribute("only_dynamics", str(True))
+        blueprint.set_attribute("hit_radius", str(5))
+        if DEBUG_MODE:
+            blueprint.set_attribute("debug_linetrace", str(True))
+
+        self.ego_vehicle_obstacle_detection = self.carla_world.spawn_actor(blueprint, carla.Transform(), self.ego_vehicle)
+        self.ego_vehicle_obstacle_detection.listen(lambda sensor_data: self.data_provider.update_ego_obstacle_distance(sensor_data))
 
     def move_spectator(self) -> None:
         """Sets the spectator to the same transform as the scene camera."""
@@ -111,13 +146,14 @@ class CarlaControlClient(object):
         if spectator is not None and self.scene_camera is not None:
             spectator.set_transform(self.scene_camera.get_transform())
 
-    def setup_camera(self) -> None:
+    def setup_camera(self, vehicle: carla.Vehicle) -> carla.Sensor:
         blueprint = self.create_camera_blueprint()
         transform = carla.Transform(
             carla.Location(SCENE_CAMERA_LOCATION_X, SCENE_CAMERA_LOCATION_Y, SCENE_CAMERA_LOCATION_Z),
             carla.Rotation(SCENE_CAMERA_ROTATION_PITCH, SCENE_CAMERA_ROTATION_YAW, SCENE_CAMERA_ROTATION_ROLL)
         )
-        self.scene_camera = self.carla_world.spawn_actor(blueprint, transform, self.ego_vehicle)
+        camera = self.carla_world.spawn_actor(blueprint, transform, vehicle)
+        return camera
 
     def create_camera_blueprint(self) -> carla.ActorBlueprint:
         """Creates the carla blueprint for the scene camera
@@ -179,6 +215,18 @@ class CarlaControlClient(object):
         while self.ego_vehicle is None:
             self.ego_vehicle = self.carla_world.try_spawn_actor(blueprint, spawn_point)
 
+    def lane_change_right(self):
+        current_waypoint = self.carla_map.get_waypoint(self.leader_vehicle.get_location, project_to_road = True)
+        waypoint_right = current_waypoint.get_right_lane()
+        target_waypoint = waypoint_right.next(20.0)
+        self.carla_steering_algorithm_leader.set_next_waypoint(target_waypoint)
+
+    def lane_change_left(self):
+        current_waypoint = self.carla_map.get_waypoint(self.leader_vehicle.get_location, project_to_road = True)
+        waypoint_left = current_waypoint.get_left_lane()
+        target_waypoint = waypoint_left.next(20.0)
+        self.carla_steering_algorithm_leader.set_next_waypoint(target_waypoint)
+
     def game_loop(self) -> None:
 
         running = True
@@ -201,21 +249,36 @@ class CarlaControlClient(object):
                 self.carla_world.tick()
                 world_snapshot = self.carla_world.get_snapshot()
 
-                self.carla_monitor.run_step(world_snapshot.timestamp, self.simulation_state)
+                monitor_input_data = DataProvider.collect_data(world_snapshot.timestamp, self.simulation_state)
+
+                self.carla_monitor.run_step(monitor_input_data)
 
                 if MOVE_SPECTATOR:
                     self.move_spectator()
 
-                if self.carla_steering_algorithm_leader is not None and self.leader_vehicle is not None:
-                    self.leader_control = self.leader_speed_controller.run_step(self.simulation_state.leader_speed)
-                    self.leader_control.steer = self.carla_steering_algorithm_leader.goToNextTargetLocation()
+                manual_control_command = self.manual_control_window.tick(self.pygame_clock)
+                print("Manual control command: ", manual_control_command)
 
-                    if self.simulation_state.other_perform_emergency_brake:
-                        self.leader_vehicle.set_light_state(carla.VehicleLightState.Brake)
-                        self.leader_control.throttle = 0.0
-                        self.leader_control.brake = 1.0
+                if manual_control_command is None:
+                    if self.carla_steering_algorithm_leader is not None and self.leader_vehicle is not None:
+                        self.leader_control = self.leader_speed_controller.run_step(self.simulation_state.leader_speed)
+                        self.leader_control.steer = self.carla_steering_algorithm_leader.goToNextTargetLocation()
+                else:
+                    if manual_control_command.steer == self.leader_vehicle.get_control().steer:
 
-                    self.leader_vehicle.apply_control(self.leader_control)
+                        self.leader_control.throttle = manual_control_command.throttle
+                        self.leader_control.brake = manual_control_command.brake
+                        self.leader_control.steer = self.carla_steering_algorithm_leader.goToNextTargetLocation()
+
+                    else:
+                        self.leader_control = manual_control_command
+
+                if self.simulation_state.other_perform_emergency_brake:
+                    self.leader_vehicle.set_light_state(carla.VehicleLightState.Brake)
+                    self.leader_control.throttle = 0.0
+                    self.leader_control.brake = 1.0
+
+                self.leader_vehicle.apply_control(self.leader_control)
                 if DEBUG_MODE:
                     print("Leader vehicle control: ", self.leader_control)
 
@@ -241,6 +304,9 @@ class CarlaControlClient(object):
         if self.scene_camera is not None:
             self.scene_camera.destroy()
             self.scene_camera = None
+        if self.leader_camera is not None:
+            self.leader_camera.destroy()
+            self.leader_camera = None
         if self.ego_vehicle is not None:
             self.ego_vehicle.destroy()
             self.ego_vehicle = None
