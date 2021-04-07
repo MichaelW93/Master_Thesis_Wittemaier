@@ -13,3 +13,6 @@ class PlatoonController(object):
 
         analyzer_input = self.monitor.run_step(data)
 
+    def destroy(self):
+        # TODO
+        pass

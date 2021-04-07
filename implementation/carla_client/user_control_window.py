@@ -68,15 +68,15 @@ class UserControlWindow(object):
 
     def update_simulation(self, values):
         simulation_state = SimulationState()
-        simulation_state.ego_speed_available = values["-EGO_SPEED-"]
+        simulation_state.managed_vehicle_speed_available = values["-EGO_SPEED-"]
         simulation_state.ego_acceleration_available = values["-EGO_ACCELERATION-"]
         simulation_state.ego_distance_available = values["-EGO_DISTANCE-"]
         simulation_state.other_speed_available = values["-OTHER_SPEED-"]
         simulation_state.other_acceleration_available = values["-OTHER_ACCELERATION-"]
         simulation_state.other_emergency_brake_available = values["-OTHER_EMERGENCY_BRAKE-"]
         simulation_state.other_braking_light_available = values["-OTHER_BRAKING_LIGHT-"]
-        simulation_state.other_perform_emergency_brake = values["-PERFORM_EMERGENCY_BRAKE-"]
-        simulation_state.leader_speed = float(values["-LEADER_SPEED-"])
+        simulation_state.leader_perform_emergency_brake = values["-PERFORM_EMERGENCY_BRAKE-"]
+        simulation_state.leader_target_speed = float(values["-LEADER_SPEED-"])
         simulation_state.speed_limit = float(values["-SPEED_LIMIT-"])
         simulation_state.connection_strength = float(values["-CONNECTION_STRENGTH-"])
 
