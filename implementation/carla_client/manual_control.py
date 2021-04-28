@@ -60,6 +60,8 @@ try:
 except ImportError:
     raise RuntimeError('cannot import numpy, make sure numpy package is installed')
 
+from implementation.configuration_parameter import *
+
 # ==============================================================================
 # -- Global functions ----------------------------------------------------------
 # ==============================================================================
@@ -91,7 +93,7 @@ class ManualControlWindow(object):
         self.camera.listen(lambda image: self._parse_image(image))
 
         self.display = pygame.display.set_mode(
-            (1280, 720),
+            (MANUAL_CONTROL_WINDOW_WIDTH, MANUAL_CONTROL_WINDOW_HEIGHT),
             pygame.HWSURFACE | pygame.DOUBLEBUF)
         self.display.fill((0, 0, 0))
         pygame.display.flip()
@@ -166,7 +168,7 @@ class KeyboardControl(object):
 
     def _parse_vehicle_keys(self, keys, milliseconds):
         self._control = self.vehicle.get_control()
-        self._steer_cache = self._control.steer
+        #self._steer_cache = self._control.steer
         key_pressed = False
         if keys[K_UP] or keys[K_w]:
             self._control.throttle = min(self._control.throttle + 0.01, 1)

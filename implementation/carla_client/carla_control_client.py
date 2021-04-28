@@ -1,7 +1,9 @@
 import threading
 import queue
+import random
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
+from matplotlib import pyplot as pyp
 
 from implementation.configuration_parameter import *
 from implementation.carla_client.data_provider import DataProvider
@@ -10,6 +12,7 @@ from implementation.carla_client.manual_control import *
 from implementation.data_classes import SimulationState
 from implementation.platoon_controller.knowledge.base_attribute import Weather
 from implementation.vehicle.vehicles import LeaderVehicle, ManagedVehicle
+from implementation.util import *
 
 
 class CarlaControlClient(object):
@@ -34,8 +37,17 @@ class CarlaControlClient(object):
 
         self.user_control_window_thread: threading.Thread = None
 
+        self.leader_speeds: List[float] = []
+        self.follower_1_speed: List[float] = []
+        self.follower_2_speed: List[float] = []
+        self.elapsed_seconds: List[float] = []
+        self.follower_1_distance: List[float] = []
+        self.follower_2_distance: List[float] = []
+
         self.scene_camera = None
         self.leader_camera = None
+
+        self.counter = 0
 
         self.setup_simulation()
         self.game_loop()
@@ -47,19 +59,31 @@ class CarlaControlClient(object):
         self.spawn_managed_vehicles()
         self.data_provider = DataProvider(self.managed_vehicles, self.leader_vehicle,
                                           self.carla_world, self.simulation_state)
-        self.scene_camera = self.setup_camera(self.ego_vehicle)
-        self.leader_camera = self.setup_camera(self.leader_vehicle)
+        transform = carla.Transform(
+            carla.Location(SCENE_CAMERA_LOCATION_X, SCENE_CAMERA_LOCATION_Y, SCENE_CAMERA_LOCATION_Z),
+            carla.Rotation(SCENE_CAMERA_ROTATION_PITCH, SCENE_CAMERA_ROTATION_YAW, SCENE_CAMERA_ROTATION_ROLL)
+        )
+        self.scene_camera = self.setup_camera(self.managed_vehicles[-1].ego_vehicle, transform,
+                                              str(PYGAME_WINDOW_WIDTH), str(PYGAME_WINDOW_HEIGHT))
+        transform = carla.Transform(
+            carla.Location(LEADER_CAMERA_LOCATION_X, LEADER_CAMERA_LOCATION_Y, LEADER_CAMERA_LOCATION_Z),
+            carla.Rotation(LEADER_CAMERA_ROTATION_PITCH, LEADER_CAMERA_ROTATION_YAW, LEADER_CAMERA_ROTATION_ROLL)
+        )
+        self.leader_camera = self.setup_camera(self.leader_vehicle.ego_vehicle, transform,
+                                               str(MANUAL_CONTROL_WINDOW_WIDTH), str(MANUAL_CONTROL_WINDOW_HEIGHT))
         self.move_spectator()
         self.carla_world.tick()  # tick once, to update actors
 
-        self.leader_vehicle.setup_vehicle()
-        for vehicle in self.managed_vehicles:
-            vehicle.setup_vehicle()
+        for i in range(len(self.managed_vehicles)):
+            self.managed_vehicles[i].setup_vehicle(i)
+
+        self.setup_front_vehicles()
 
         default_simulation_state = SimulationState()
         self.simulation_state = default_simulation_state
 
-        self.manual_control_window = ManualControlWindow(self.carla_world, self.carla_map, self.leader_vehicle,
+        self.manual_control_window = ManualControlWindow(self.carla_world, self.carla_map,
+                                                         self.leader_vehicle.ego_vehicle,
                                                          self.leader_camera, self.carla_client)
 
         self.user_control_window_thread = threading.Thread(target=self.user_control_window_thread_execution)
@@ -71,9 +95,13 @@ class CarlaControlClient(object):
     def setup_front_vehicles(self):
         for i in range(len(self.managed_vehicles)):
             if i == 0:
-                self.managed_vehicles[i].front_vehicles = []
+                self.managed_vehicles[i].front_vehicles = [self.leader_vehicle]
+                self.managed_vehicles[i].front_vehicle_is_leader = True
+            elif i == 1:
+                self.managed_vehicles[i].front_vehicles = [self.managed_vehicles[0]]
             else:
-                self.managed_vehicles[i].front_vehicles = self.managed_vehicles[0: i-1]
+                self.managed_vehicles[i].front_vehicles = self.managed_vehicles[0:(i-1)]
+            print("Front vehicles: ", self.managed_vehicles[i].front_vehicles)
 
 
     def initialize_carla_client(self) -> None:
@@ -99,23 +127,19 @@ class CarlaControlClient(object):
         if spectator is not None and self.scene_camera is not None:
             spectator.set_transform(self.scene_camera.get_transform())
 
-    def setup_camera(self, vehicle: carla.Vehicle) -> carla.Sensor:
-        blueprint = self.create_camera_blueprint()
-        transform = carla.Transform(
-            carla.Location(SCENE_CAMERA_LOCATION_X, SCENE_CAMERA_LOCATION_Y, SCENE_CAMERA_LOCATION_Z),
-            carla.Rotation(SCENE_CAMERA_ROTATION_PITCH, SCENE_CAMERA_ROTATION_YAW, SCENE_CAMERA_ROTATION_ROLL)
-        )
-        camera = self.carla_world.spawn_actor(blueprint, transform, vehicle)
+    def setup_camera(self, vehicle: carla.Vehicle, camera_transform: carla.Transform, image_width: str, image_height: str) -> carla.Sensor:
+        blueprint = self.create_camera_blueprint(image_width, image_height)
+        camera = self.carla_world.spawn_actor(blueprint, camera_transform, vehicle)
         return camera
 
-    def create_camera_blueprint(self) -> carla.ActorBlueprint:
+    def create_camera_blueprint(self, image_width: str, image_height: str) -> carla.ActorBlueprint:
         """Creates the carla blueprint for the scene camera
         :return carla.Blueprint
         """
         bp_library = self.carla_world.get_blueprint_library()
         blueprint = bp_library.find("sensor.camera.rgb")
-        blueprint.set_attribute('image_size_x', str(PYGAME_WINDOW_WIDTH))
-        blueprint.set_attribute('image_size_y', str(PYGAME_WINDOW_HEIGHT))
+        blueprint.set_attribute('image_size_x', image_width)
+        blueprint.set_attribute('image_size_y', image_height)
 
         blueprint.set_attribute('role_name', "scene_camera")
         blueprint.set_attribute('blur_amount', str(0.5))
@@ -146,20 +170,24 @@ class CarlaControlClient(object):
         spawn_point.rotation.yaw = LEADER_SPAWN_ROTATION_YAW
         self.leader_vehicle.spawn_vehicle(spawn_point, "vehicle.bmw.grandtourer")
         self.leader_vehicle.setup_vehicle()
+        self.carla_world.tick()
 
     def spawn_managed_vehicles(self) -> None:
         spawn_point_offset = 0
         for i in range(NUMBER_OF_MANAGED_VEHICLES):
-            self.managed_vehicles.append(ManagedVehicle(self.carla_world))
+            self.managed_vehicles.append(ManagedVehicle(self.carla_world, f"Follower_{i}"))
             spawn_point = carla.Transform()
             spawn_point.location.x = MANAGED_VEHICLE_SPAWN_LOCATION_X + spawn_point_offset
             spawn_point.location.y = MANAGED_VEHICLE_SPAWN_LOCATION_Y
             spawn_point.location.z = MANAGED_VEHICLE_SPAWN_LOCATION_Z
 
             spawn_point.rotation.yaw = MANAGED_VEHICLE_SPAWN_ROTATION_YAW
-            self.managed_vehicles[i].spawn_vehicle(spawn_point, "vehicle.audi.a2")
+            blueprint = random.choice(["vehicle.audi.a2", "vehicle.audi.etron", "vehicle.audi.tt", "vehicle.charger2020.charger2020"])
+            self.managed_vehicles[i].spawn_vehicle(spawn_point, "vehicle.audi.tt")
             self.managed_vehicles[i].leader_vehicle = self.leader_vehicle
-            spawn_point_offset += 20
+            print("Managed vehicle spawned")
+            spawn_point_offset -= 20
+            self.carla_world.tick()
 
     def game_loop(self) -> None:
 
@@ -172,6 +200,8 @@ class CarlaControlClient(object):
                     if isinstance(event, SimulationState):
                         old_weather = self.simulation_state.weather
                         self.simulation_state = self.update_simulation_state(event)
+                        if DEBUG_MODE:
+                            print(self.simulation_state.__str__())
                         if self.simulation_state.weather is not old_weather:
                             self.update_weather(self.simulation_state.weather)
                     elif event == "EXIT":
@@ -183,18 +213,37 @@ class CarlaControlClient(object):
                 self.carla_world.tick()
                 world_snapshot = self.carla_world.get_snapshot()
 
-                vehicles_monitor_input_data = DataProvider.collect_data(world_snapshot.timestamp, self.simulation_state)
+                vehicles_monitor_input_data = self.data_provider.collect_data(world_snapshot.timestamp,
+                                                                              self.simulation_state)
+                print(vehicles_monitor_input_data)
                 if MOVE_SPECTATOR:
                     self.move_spectator()
 
                 manual_vehicle_control = self.manual_control_window.tick(self.pygame_clock)
-                print("Manual control command: ", manual_vehicle_control)
                 self.leader_vehicle.run_step(manual_vehicle_control, self.simulation_state)
 
+                print("Length managed vehicles: ", range(len(self.managed_vehicles)))
                 for vehicle_number in range(len(self.managed_vehicles)):
+                    #print(f"Monitor input for vehicle {self.managed_vehicles[vehicle_number].role_name}:"
+                    #      f"{vehicles_monitor_input_data[vehicle_number]}")
+                    print("Monitor Input data at control client: ", vehicles_monitor_input_data[vehicle_number])
                     self.managed_vehicles[vehicle_number].run_step(
                         vehicles_monitor_input_data[vehicle_number], self.simulation_state)
 
+                if self.counter >= 5:
+                    self.leader_speeds.append(velocity_to_speed(self.leader_vehicle.ego_vehicle.get_velocity()))
+                    self.follower_1_speed.append(velocity_to_speed(self.managed_vehicles[0].get_velocity()))
+                    self.follower_2_speed.append(velocity_to_speed(self.managed_vehicles[1].get_velocity()))
+                    self.follower_1_distance.append(vehicles_monitor_input_data[0].ego_vehicle_distance.distance)
+                    self.follower_2_distance.append(vehicles_monitor_input_data[1].ego_vehicle_distance.distance)
+                    self.elapsed_seconds.append(world_snapshot.timestamp.elapsed_seconds)
+                    self.counter = 0
+                else:
+                    self.counter += 1
+
+                if world_snapshot.timestamp.elapsed_seconds > 10:
+                    #self.plot_vehicle_speed()
+                    pass
             except KeyboardInterrupt:
                 running = False
                 self.exit_client()
@@ -212,36 +261,62 @@ class CarlaControlClient(object):
             simulation_state.leader_acceleration_available = False
             simulation_state.leader_speed_available = False
             for i in range(len(self.managed_vehicles)):
-                simulation_state.managed_vehicle_distance_available[i] = False
-                simulation_state.managed_vehicle_acceleration_available[i] = False
-                simulation_state.managed_vehicle_speed_available[i] = False
-                simulation_state.managed_vehicle_braking_light_available[i] = False
+                simulation_state.managed_vehicle_ego_distance_available[i] = False
+                simulation_state.managed_vehicle_acceleration_to_other_available[i] = False
+                simulation_state.managed_vehicle_speed_to_other_available[i] = False
+                simulation_state.managed_vehicle_front_vehicle_braking_light_available[i] = False
         return simulation_state
+
+    def plot_vehicle_speed(self):
+        fig1, ax = pyp.subplots(2)
+        ax[0].plot(self.elapsed_seconds, self.leader_speeds, label="leader_vehicle")
+        ax[0].plot(self.elapsed_seconds, self.follower_1_speed, label="Follower 1")
+        ax[0].plot(self.elapsed_seconds, self.follower_2_speed, label="Follower 2")
+        ax[0].set_xlabel("Time (s)")
+        ax[0].set_ylabel("Speed (m/s)")
+        ax[0].set_title("Speed comparison")
+        ax[0].legend()
+
+        ax[1].plot(self.elapsed_seconds, self.follower_1_distance, label="Follower 1 distance")
+        ax[1].plot(self.elapsed_seconds, self.follower_2_distance, label="Follower 2 distance")
+        ax[1].set_xlabel("Time (s)")
+        ax[1].set_ylabel("Distance (m)")
+        ax[1].legend()
+        ax[1].set_title("Distance comparison")
+
+        pyp.show()
+
 
     def reset_simulation(self) -> None:
         if self.scene_camera is not None:
             self.scene_camera.destroy()
             self.scene_camera = None
+            print("Destroyed scene camera")
         if self.leader_camera is not None:
             self.leader_camera.destroy()
             self.leader_camera = None
+            print("Destroyed leader camera")
         for vehicle in self.managed_vehicles:
             if vehicle is not None:
                 if vehicle.ego_vehicle is not None:
                     vehicle.destroy()
+                    print("Managed vehicle destroyed")
         self.managed_vehicles = []
 
         if self.leader_vehicle is not None:
             self.leader_vehicle.ego_vehicle.destroy()
             self.leader_vehicle = None
 
-        self.setup_simulation()
+        #self.setup_simulation()
 
     def exit_client(self) -> None:
 
         print("Exiting client")
 
+        self.plot_vehicle_speed()
+
         self.reset_simulation()
+
 
         if self.user_control_window is not None:
             self.user_control_window.exit_window()

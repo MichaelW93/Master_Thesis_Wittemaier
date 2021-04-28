@@ -1,6 +1,6 @@
 import carla
 import math
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Union
 from implementation.data_classes import SimulationState, MonitorInputData
 from implementation.platoon_controller.knowledge.base_attribute import *
 from implementation.vehicle.vehicles import ManagedVehicle, LeaderVehicle
@@ -19,15 +19,22 @@ class DataProvider(object):
 
         self.simulation_state: SimulationState = simulation_state
 
-        self.leader_acceleration_data: List[Optional[float]] = initialize_array(None, 10)
-        self.leader_speed_data: List[Optional[float]] = initialize_array(None, 10)
+        self.leader_acceleration_data: List[Optional[float]] = initialize_list(None, 10)
+        self.leader_speed_data: List[Optional[float]] = initialize_list(None, 10)
 
         self.managed_vehicles_acceleration_data: List[List[Optional[carla.IMUMeasurement]]] = \
-            initialize_array(initialize_array(None, 10), NUMBER_OF_MANAGED_VEHICLES)
+            initialize_list_of_lists(None, 10, NUMBER_OF_MANAGED_VEHICLES)
         self.managed_vehicles_speed_data: List[List[Optional[float]]] = \
-            initialize_array(initialize_array(None, 10), NUMBER_OF_MANAGED_VEHICLES)
+            initialize_list_of_lists(None, 10, NUMBER_OF_MANAGED_VEHICLES)
         self.managed_vehicles_distance: List[List[Optional[carla.ObstacleDetectionEvent]]] = \
-            initialize_array(initialize_array(None, 10), NUMBER_OF_MANAGED_VEHICLES)
+            initialize_list_of_lists(None, 10, NUMBER_OF_MANAGED_VEHICLES)
+
+        self.test_list = initialize_list_of_lists(None, 10, NUMBER_OF_MANAGED_VEHICLES)
+        self.test_counter_1 = 0
+        self.test_counter_2 = 0
+
+        self.max_acceleration = 0
+        self.max_deceleration = 0
 
     def calculate_delay_in_simulation_tick(self) -> Optional[int]:
         if self.simulation_state.connection_strength == 100:
@@ -48,7 +55,7 @@ class DataProvider(object):
 
         delay_in_simulation_ticks = self.calculate_delay_in_simulation_tick()
         self.update_leader_speed(self.calculate_vehicle_speed(self.leader_vehicle.ego_vehicle.get_velocity()))
-        self.update_leader_acceleration(self.leader_vehicle.get_sensor_data()[0])
+        self.update_leader_acceleration(self.leader_vehicle.get_sensor_data())
         self.update_managed_vehicles_speed()
         self.update_managed_vehicles_sensor_data()
 
@@ -60,15 +67,16 @@ class DataProvider(object):
             vehicle = self.managed_vehicles[i]
             monitor_input_data: MonitorInputData = MonitorInputData(timestamp)
             """Simulation data"""
-            monitor_input_data.speed_limit = simulation_state.speed_limit
+            monitor_input_data.speed_limit = self.simulation_state.speed_limit
             monitor_input_data.weather = self.__process_weather()
-            monitor_input_data.connection_strength = simulation_state.connection_strength
+            monitor_input_data.connection_strength = self.delay
+            monitor_input_data.ego_vehicle_role_name = vehicle.role_name
 
             """Ego vehicle data"""
-            if self.simulation_state.managed_vehicle_speed_available[i]:
-                monitor_input_data.ego_speed = self.calculate_vehicle_speed(vehicle.get_velocity())
+            monitor_input_data.ego_vehicle_speed = self.calculate_vehicle_speed(vehicle.get_velocity())
             # Acceleration and distance
-            monitor_input_data = self.process_sensor_data(vehicle.get_sensor_data(), monitor_input_data, i)
+            monitor_input_data.ego_vehicle_distance, monitor_input_data.ego_vehicle_acceleration\
+                = self.process_sensor_data(vehicle.get_sensor_data(), i)
 
             """Leader vehicle data"""
             if self.simulation_state.leader_speed_available:
@@ -77,13 +85,23 @@ class DataProvider(object):
                 monitor_input_data.leader_acceleration = self.leader_acceleration_data[delay_in_simulation_ticks]
 
             """Front vehicle data"""
-            for front_vehicle_number in range(len(vehicle.front_vehicles)):
-                monitor_input_data.front_vehicles_speed.append(
-                    self.managed_vehicles_speed_data[front_vehicle_number][delay_in_simulation_ticks])
-                monitor_input_data.front_vehicles_acceleration.append(
-                    self.managed_vehicles_acceleration_data[front_vehicle_number][delay_in_simulation_ticks])
+            if not vehicle.front_vehicle_is_leader:
+                for front_vehicle_number in range(len(vehicle.front_vehicles)):
+                    monitor_input_data.front_vehicles_speed.append(
+                        self.managed_vehicles_speed_data[front_vehicle_number][delay_in_simulation_ticks])
+                    if self.managed_vehicles_acceleration_data[front_vehicle_number][delay_in_simulation_ticks] is not None:
+                        monitor_input_data.front_vehicles_acceleration.append(
+                            self.managed_vehicles_acceleration_data[front_vehicle_number][delay_in_simulation_ticks].accelerometer.x)
+                    else:
+                        monitor_input_data.front_vehicles_acceleration.append(None)
 
             vehicles_monitor_input_data.append(monitor_input_data)
+            print(monitor_input_data)
+
+        self.leader_vehicle.sensor_data = []
+        for vehicle in self.managed_vehicles:
+            vehicle.sensor_data = []
+
         return vehicles_monitor_input_data
 
     def update_managed_vehicles_sensor_data(self):
@@ -91,7 +109,7 @@ class DataProvider(object):
             imu_data, distance_data = self.extract_sensor_data(self.managed_vehicles[i].get_sensor_data())
             for j, data in reversed(list(enumerate(self.managed_vehicles_acceleration_data[i]))):
                 if j == 0:
-                    if self.simulation_state.managed_vehicle_acceleration_available[i]:
+                    if self.simulation_state.managed_vehicle_acceleration_to_other_available[i]:
                         self.managed_vehicles_acceleration_data[i][j] = imu_data
                     else:
                         self.managed_vehicles_acceleration_data[i][j] = None
@@ -100,7 +118,7 @@ class DataProvider(object):
 
             for j, data in reversed(list(enumerate(self.managed_vehicles_distance[i]))):
                 if j == 0:
-                    if self.simulation_state.managed_vehicle_distance_available[i]:
+                    if self.simulation_state.managed_vehicle_ego_distance_available[i]:
                         if imu_data is None:
                             self.managed_vehicles_distance[i][j] = -1
                         else:
@@ -115,7 +133,7 @@ class DataProvider(object):
 
             for j, data in reversed(list(enumerate(self.managed_vehicles_speed_data[i]))):
                 if j == 0:
-                    if self.simulation_state.managed_vehicle_speed_available[i]:
+                    if self.simulation_state.managed_vehicle_speed_to_other_available[i]:
                         self.managed_vehicles_speed_data[i][j] = speed
                     else:
                         self.managed_vehicles_speed_data[i][j] = None
@@ -132,7 +150,11 @@ class DataProvider(object):
             else:
                 self.leader_speed_data[i] = self.leader_speed_data[i-1]
 
-    def update_leader_acceleration(self, sensor_data: carla.IMUMeasurement):
+    def update_leader_acceleration(self, sensor_data_array: carla.IMUMeasurement):
+        if len(sensor_data_array) >= 1:
+            sensor_data = sensor_data_array[0]
+        else:
+            return
         limits = (-99.9, 99.9)
         leader_acceleration = max(limits[0], min(limits[1], sensor_data.accelerometer.x))
         for i, data in reversed(list(enumerate(self.leader_acceleration_data))):
@@ -143,6 +165,15 @@ class DataProvider(object):
                     self.leader_acceleration_data[i] = None
             else:
                 self.leader_acceleration_data[i] = self.leader_acceleration_data[i - 1]
+
+        if leader_acceleration < 0:
+            if leader_acceleration < self.max_deceleration:
+                self.max_deceleration = leader_acceleration
+        else:
+            if leader_acceleration > self.max_acceleration:
+                self.max_acceleration = leader_acceleration
+
+        print("Max acceleration = ", self.max_acceleration, " Max deceleration = ", self.max_deceleration)
 
     @staticmethod
     def extract_sensor_data(sensor_data: List[Optional[carla.SensorData]]) -> \
@@ -158,64 +189,26 @@ class DataProvider(object):
 
         return imu_data, distance_data
 
-    def process_sensor_data(self, sensor_data: List [carla.SensorData], monitor_input_data: MonitorInputData, vehicle_number: int) -> MonitorInputData:
+    def process_sensor_data(self, sensor_data: List [carla.SensorData], vehicle_number: int) -> \
+            Tuple[Union[carla.ObstacleDetectionEvent, int], carla.IMUMeasurement]:
+
+        ego_distance = None
+        ego_acceleration = None
+
         for data in sensor_data:
             if isinstance(data, carla.IMUMeasurement):
-                if self.simulation_state.managed_vehicle_acceleration_available[vehicle_number]:
-                    monitor_input_data.ego_acceleration = data
-            elif isinstance(data, carla.ObstaceDetectionEvent):
-                if self.simulation_state.managed_vehicle_distance_available[vehicle_number]:
-                    monitor_input_data.ego_distance = data
+                ego_acceleration = data
+            elif isinstance(data, carla.ObstacleDetectionEvent):
+                ego_distance = data
 
         """No vehicle in front detected"""
-        if monitor_input_data.ego_distance is None:
-            if self.simulation_state.managed_vehicle_distance_available[vehicle_number]:
-                monitor_input_data.ego_distance = -1
+        if ego_distance is None:
+            if self.simulation_state.managed_vehicle_ego_distance_available[vehicle_number]:
+                ego_distance = -1
+                ego_distance = carla.ObstacleDetectionEvent()
+                ego_distance.distance = 50
 
-        return monitor_input_data
-
-
-    def update_ego_acceleration(self, sensor_data: carla.IMUMeasurement) -> None:
-        if self.simulation_state.ego_acceleration_available:
-            self.ego_imu_sensor_data = sensor_data
-        else:
-            self.ego_imu_sensor_data = None
-
-    def update_other_acceleration(self, sensor_data: carla.IMUMeasurement) -> None:
-
-        for i, data in reversed(list(enumerate(self.other_acceleration_data))):
-            if i == 0:
-                if self.simulation_state.other_acceleration_available:
-                    self.other_acceleration_data[i] = sensor_data
-                else:
-                    self.other_acceleration_data[i] = None
-            else:
-                self.other_acceleration_data[i] = self.other_acceleration_data[i - 1]
-
-    def __update_other_braking_light(self) -> Optional[bool]:
-        if self.simulation_state.other_braking_light_available:
-            light_state = self.leader_vehicle.get_light_state()
-            braking_light = light_state.Brake
-            return braking_light
-        else:
-            return None
-
-    def update_ego_obstacle_distance(self, sensor_data: carla.ObstacleDetectionEvent) -> None:
-        if self.simulation_state.ego_distance_available:
-            self.new_distance_received = True
-            self.ego_obstacle_sensor_data = sensor_data
-        else:
-            self.ego_obstacle_sensor_data = None
-
-    def update_other_emergency_brake(self, simulation_state: SimulationState) -> None:
-        for i, data in reversed(list(enumerate(self.other_emergency_brake_data))):
-            if i == 0:
-                if self.simulation_state.other_emergency_brake_available:
-                    self.other_emergency_brake_data[i] = simulation_state.leader_perform_emergency_brake
-                else:
-                    self.other_emergency_brake_data[i] = None
-            else:
-                self.other_emergency_brake_data[i] = simulation_state.leader_perform_emergency_brake[i - 1]
+        return ego_distance, ego_acceleration
 
     def __process_weather(self) -> Weather:
         weather = self.carla_world.get_weather()
@@ -226,7 +219,8 @@ class DataProvider(object):
         else:
             return Weather.SUNSHINE
 
-    def calculate_vehicle_speed(self, velocity: carla.Vector3D) -> float:
+    @staticmethod
+    def calculate_vehicle_speed(velocity: carla.Vector3D) -> float:
         """Takes an carla velocity vector and transforms it into an speed value [m/s]
         :param velocity: velocity vector
         :type velocity: carla.Vector3D

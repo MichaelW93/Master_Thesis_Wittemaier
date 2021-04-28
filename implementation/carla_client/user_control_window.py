@@ -19,18 +19,34 @@ class UserControlWindow(object):
         self.simulation_running = True
 
     def __initialize_layout(self):
+
+        follower_speed_checkboxes = []
+        follower_acceleration_checkboxes = []
+        follower_distance_checkboxes = []
+        follower_breaking_light_checkboxes = []
+
+        for i in range(NUMBER_OF_MANAGED_VEHICLES):
+            follower_speed_checkboxes.append(
+                sg.Checkbox(f"managed vehicle {i} speed available", default=True, key=f"-MANAGED_SPEED_{i}-"))
+            follower_acceleration_checkboxes.append(
+                sg.Checkbox(f"managed vehicle {i} acceleration available", default=True, key=f"-MANAGED_ACCELERATION_{i}-"))
+            follower_distance_checkboxes.append(
+                sg.Checkbox(f"managed vehicle {i} distance available", default=True, key=f"-MANAGED_DISTANCE_{i}-"))
+            follower_breaking_light_checkboxes.append(
+                sg.Checkbox(f"managed vehicle {i} breaking available", default=True, key=f"-MANAGED_BREAKING_LIGHT_{i}-"))
+
         self.layout = [
-            [sg.Checkbox("ego_speed_available", default=True, key="-EGO_SPEED-")],
-            [sg.Checkbox("ego_acceleration_available", default=True, key="-EGO_ACCELERATION-")],
-            [sg.Checkbox("ego_distance_available",default=True, key="-EGO_DISTANCE-")],
-            [sg.Checkbox("other_acceleration_available", default=True, key="-OTHER_ACCELERATION-")],
-            [sg.Checkbox("other_speed_available", default=True, key="-OTHER_SPEED-")],
-            [sg.Checkbox("other_emergency_brake_available", default=True, key="-OTHER_EMERGENCY_BRAKE-")],
-            [sg.Checkbox("other_braking_light_available", default=True, key="-OTHER_BRAKING_LIGHT-")],
+            [*follower_distance_checkboxes],
+            [*follower_acceleration_checkboxes],
+            [*follower_speed_checkboxes],
+            [*follower_breaking_light_checkboxes],
+            [sg.Checkbox("leader_acceleration_available", default=True, key="-LEADER_ACCELERATION-")],
+            [sg.Checkbox("leader_speed_available", default=True, key="-LEADER_SPEED-")],
+            [sg.Checkbox("leader_breaking_light_available", default=True, key="-LEADER_BRAKING_LIGHT-")],
             [sg.InputText("60", key="-SPEED_LIMIT-"), sg.Text("Speed Limit")],
-            [sg.InputText("60", key="-LEADER_SPEED-"), sg.Text("Leader Speed")],
+            [sg.InputText("60", key="-LEADER_TARGET_SPEED-"), sg.Text("Leader target speed")],
             [sg.Checkbox("Leader perform emergency brake", default=False, key="-PERFORM_EMERGENCY_BRAKE-")],
-            [sg.Slider(range=(1,100), default_value=100, resolution=25,
+            [sg.Slider(range=(1, 100), default_value=100, resolution=25,
                        orientation="horizontal", key="-CONNECTION_STRENGTH-"),
                 sg.Text("Connection Strength")],
             [sg.Radio("Sunshine", "WEATHER", default=True, key="-SUNSHINE-"),
@@ -68,15 +84,16 @@ class UserControlWindow(object):
 
     def update_simulation(self, values):
         simulation_state = SimulationState()
-        simulation_state.managed_vehicle_speed_available = values["-EGO_SPEED-"]
-        simulation_state.ego_acceleration_available = values["-EGO_ACCELERATION-"]
-        simulation_state.ego_distance_available = values["-EGO_DISTANCE-"]
-        simulation_state.other_speed_available = values["-OTHER_SPEED-"]
-        simulation_state.other_acceleration_available = values["-OTHER_ACCELERATION-"]
-        simulation_state.other_emergency_brake_available = values["-OTHER_EMERGENCY_BRAKE-"]
-        simulation_state.other_braking_light_available = values["-OTHER_BRAKING_LIGHT-"]
-        simulation_state.leader_perform_emergency_brake = values["-PERFORM_EMERGENCY_BRAKE-"]
-        simulation_state.leader_target_speed = float(values["-LEADER_SPEED-"])
+        for i in range(NUMBER_OF_MANAGED_VEHICLES):
+            simulation_state.managed_vehicle_speed_to_other_available[i] = values[f"-MANAGED_SPEED_{i}-"]
+            simulation_state.managed_vehicle_acceleration_to_other_available[i] = values[f"-MANAGED_ACCELERATION_{i}-"]
+            simulation_state.managed_vehicle_front_vehicle_braking_light_available[i] = values[f"-MANAGED_BREAKING_LIGHT_{i}-"]
+            simulation_state.managed_vehicle_ego_distance_available[i] = values[f"-MANAGED_DISTANCE_{i}-"]
+
+        simulation_state.leader_speed_available = values["-LEADER_SPEED-"]
+        simulation_state.leader_acceleration_available = values["-LEADER_ACCELERATION-"]
+        simulation_state.leader_braking_light_available = values["-LEADER_BRAKING_LIGHT-"]
+        simulation_state.leader_target_speed = float(values["-LEADER_TARGET_SPEED-"])
         simulation_state.speed_limit = float(values["-SPEED_LIMIT-"])
         simulation_state.connection_strength = float(values["-CONNECTION_STRENGTH-"])
 

@@ -1,12 +1,17 @@
 from typing import List, Optional
 
 from implementation.data_classes import EnvironmentKnowledge
+from implementation.util import *
+
 
 class Logger(object):
+    """
+    Stores environment knowledge data from the ego vehicle for the last couple simulation steps.
+    """
 
     def __init__(self):
-        self.current_simulation_step: Optional[EnvironmentKnowledge] = None
-        self.simulation_step_history: List[EnvironmentKnowledge] = []
+        self.current_simulation_step: EnvironmentKnowledge = EnvironmentKnowledge()
+        self.simulation_step_history: List[EnvironmentKnowledge] = initialize_list(None, 10)
 
     def get_current_simulation_step(self) -> EnvironmentKnowledge:
         if self.current_simulation_step is not None:

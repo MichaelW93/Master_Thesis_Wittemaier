@@ -1,84 +1,245 @@
 import carla
 import math
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
 
 from implementation.platoon_controller.knowledge.base_attribute import *
-from implementation.data_classes import EnvironmentKnowledge, MonitorInputData
+from implementation.data_classes import EnvironmentKnowledge, MonitorInputData, FailureType
+
+if TYPE_CHECKING:
+    from implementation.vehicle.vehicles import ManagedVehicle
 
 
 class Monitor(object):
 
-    def __init__(self) -> None:
+    def __init__(self, knowledge, ego_vehicle) -> None:
         self.leader_acceleration = None
         self.ego_acceleration = None
         self.ego_distance = None
         self.new_distance_received = False
+        self.knowledge = knowledge
+        self.ego_vehicle: "ManagedVehicle" = ego_vehicle
 
     def run_step(self, monitor_input_data: MonitorInputData):
 
         environment_knowledge = self.create_environment_knowledge(monitor_input_data)
-
-        print(environment_knowledge.__str__())
+        self.knowledge.store_environment_knowledge(environment_knowledge)
         if DEBUG_MODE:
             print(environment_knowledge.__str__())
+        return environment_knowledge
 
     def create_environment_knowledge(self, monitor_input_data: MonitorInputData) -> EnvironmentKnowledge:
 
+        print("Monitor input data at monitor:", monitor_input_data)
+        previous_environment_knowledge: EnvironmentKnowledge = self.knowledge.get_current_environment_knowledge()
         environment_knowledge = EnvironmentKnowledge()
+        environment_knowledge.ego_name = self.ego_vehicle.role_name
         environment_knowledge.timestamp = monitor_input_data.timestamp
         environment_knowledge.connection_strength = monitor_input_data.connection_strength
-        environment_knowledge.ego_speed = self.__process_ego_speed(monitor_input_data.ego_speed)
-        environment_knowledge.ego_distance = self.__process_ego_distance(monitor_input_data.ego_distance)
-        environment_knowledge.ego_acceleration = self.__process_ego_acceleration(monitor_input_data.ego_acceleration)
-        environment_knowledge.other_speed = self.__process_other_speed(monitor_input_data.other_speed)
-        environment_knowledge.other_acceleration = self.__process_other_acceleration(monitor_input_data.other_acceleration)
-        environment_knowledge.other_braking_light = self.__process_other_braking_light(monitor_input_data.other_braking_light)
-        environment_knowledge.other_emergency_brake = monitor_input_data.other_emergency_brake
+        environment_knowledge.time_to_last_step = monitor_input_data.timestamp.elapsed_seconds - \
+                                                previous_environment_knowledge.timestamp.elapsed_seconds
+
+        environment_knowledge.ego_speed = self.__check_speed_for_failures(
+            monitor_input_data.ego_vehicle_speed,
+            previous_environment_knowledge.ego_speed,
+            previous_environment_knowledge.ego_acceleration,
+            previous_environment_knowledge.timestamp,
+            monitor_input_data.timestamp)
+
+        environment_knowledge.ego_acceleration = self.__check_acceleration_for_failures(
+            self.__process_acceleration(monitor_input_data.ego_vehicle_acceleration),
+            monitor_input_data.timestamp,
+            previous_environment_knowledge.timestamp)
+
+        if self.ego_vehicle.front_vehicle_is_leader:
+            front_vehicle_previous_speed = previous_environment_knowledge.leader_speed
+            front_vehicle_previous_acceleration = previous_environment_knowledge.leader_acceleration
+        else:
+            if len(previous_environment_knowledge.front_vehicles_speed) > 0:
+                front_vehicle_previous_speed = previous_environment_knowledge.front_vehicles_speed[-1]
+            else:
+                front_vehicle_previous_speed = (None, FailureType.omission)
+
+            if len(previous_environment_knowledge.front_vehicles_acceleration) > 0:
+                front_vehicle_previous_acceleration = previous_environment_knowledge.front_vehicles_acceleration[-1]
+            else:
+                front_vehicle_previous_acceleration = (None, FailureType.omission)
+
+        environment_knowledge.ego_distance = self.__check_distance_for_failure(
+            monitor_input_data.ego_vehicle_distance,
+            previous_environment_knowledge.ego_speed,
+            previous_environment_knowledge.ego_acceleration,
+            front_vehicle_previous_acceleration,
+            front_vehicle_previous_speed,
+            previous_environment_knowledge.ego_distance,
+            monitor_input_data.timestamp,
+            previous_environment_knowledge.timestamp)
+
+        environment_knowledge.leader_speed = self.__check_speed_for_failures(
+            monitor_input_data.leader_speed,
+            previous_environment_knowledge.leader_speed,
+            previous_environment_knowledge.leader_acceleration,
+            previous_environment_knowledge.timestamp,
+            monitor_input_data.timestamp
+        )
+
+        environment_knowledge.leader_acceleration = self.__check_acceleration_for_failures(
+            monitor_input_data.leader_acceleration,
+            monitor_input_data.timestamp,
+            previous_environment_knowledge.timestamp
+        )
+
+        if not self.ego_vehicle.front_vehicle_is_leader:
+            for i in range(len(self.ego_vehicle.front_vehicles)):
+                if len(previous_environment_knowledge.front_vehicles_speed) > 0:
+                    front_vehicle_speed = self.__check_speed_for_failures(
+                        monitor_input_data.front_vehicles_speed[i],
+                        previous_environment_knowledge.front_vehicles_speed[i],
+                        previous_environment_knowledge.front_vehicles_acceleration[i],
+                        previous_environment_knowledge.timestamp,
+                        monitor_input_data.timestamp
+                    )
+                else:
+                    front_vehicle_speed = (0, FailureType.omission)
+                environment_knowledge.front_vehicles_speed.append(front_vehicle_speed)
+
+                front_vehicle_acceleration = self.__check_acceleration_for_failures(
+                    monitor_input_data.front_vehicles_acceleration[i],
+                    monitor_input_data.timestamp,
+                    previous_environment_knowledge.timestamp
+                )
+                environment_knowledge.front_vehicles_acceleration.append(front_vehicle_acceleration)
 
         environment_knowledge.speed_limit = monitor_input_data.speed_limit
-        environment_knowledge.weather = self.__process_weather()
+        environment_knowledge.weather = monitor_input_data.weather
 
+        print("Environment knowledge created")
         return environment_knowledge
 
-    def __process_ego_speed(self, ego_speed_data) -> Optional[Tuple[float, float]]:
-        if ego_speed_data is not None:
-            ego_speed = (ego_speed_data, EGO_SPEED_RANGE)
-            return ego_speed
-        else:
-            print("No ego speed available")
-            # TODO
+    @staticmethod
+    def __process_acceleration(sensor_data: Optional[carla.IMUMeasurement]) -> Optional[float]:
 
-    def __process_ego_acceleration(self, sensor_data: carla.IMUMeasurement) -> Optional[Tuple[float, float]]:
         if sensor_data is not None:
             limits = (-99.9, 99.9)
-            current_ego_acceleration = max(limits[0], min(limits[1], sensor_data.accelerometer.x))
-            ego_acceleration = (current_ego_acceleration, EGO_ACCELERATION_RANGE)
-            return ego_acceleration
+            acceleration = max(limits[0], min(limits[1], sensor_data.accelerometer.x))
+            return acceleration
         else:
-            print("No ego acceleration available")
-            # TODO
+            return None
 
-    def __process_ego_distance(self, sensor_data: carla.ObstacleDetectionEvent) -> Optional[Tuple[float, float]]:
+    @staticmethod
+    def __check_speed_for_failures(speed_data: Optional[float],
+                                   previous_speed: Tuple[Optional[float], FailureType],
+                                   previous_acceleration: Tuple[Optional[float], FailureType],
+                                   previous_timestamp: carla.Timestamp,
+                                   current_timestamp: carla.Timestamp) \
+            -> Tuple[Optional[float], FailureType]:
+        """"""
+        """Omission Check"""
+        if speed_data is None:
+            speed = (None, FailureType.omission)
+            return speed
 
-        if sensor_data is not None:
-            if sensor_data.other_actor.id == self.leader_vehicle.id:
-                return sensor_data.distance
+        speed_threshold = speed_data * SPEED_THRESHOLD_FACTOR
+        if None not in {previous_speed[0], previous_acceleration[0]}:
+            """All variables are available"""
+            expected_speed = previous_speed[0] + previous_acceleration[0] * (current_timestamp.elapsed_seconds -
+                                                                                 previous_timestamp.elapsed_seconds)
+        else:
+            expected_speed = speed_data
+
+        """Check for delay"""
+        if (0.05 - DELAY_THRESHOLD) <= (current_timestamp.elapsed_seconds - previous_timestamp.elapsed_seconds) \
+                <= (0.05 + DELAY_THRESHOLD):
+            if (expected_speed - speed_threshold) <= speed_data <= (expected_speed + speed_threshold):
+                speed = (speed_data, FailureType.no_failure)
+                return speed
             else:
-                return None
+                speed = (speed_data, FailureType.faulty_value)
+                return speed
         else:
-            print("No distance data received")
-            # TODO
+            if (expected_speed - speed_threshold) <= speed_data <= (expected_speed + speed_threshold):
+                speed = (speed_data, FailureType.delay)
+                return speed
+            else:
+                speed = (speed_data, FailureType.faulty_delayed)
+                return speed
 
-    def __process_other_acceleration(self, sensor_data: carla.IMUMeasurement) -> Optional[Tuple[float, float]]:
-        if sensor_data is not None:
-            limits = (-99.9, 99.9)
-            current_other_acceleration = max(limits[0], min(limits[1], sensor_data.accelerometer.x))
-            leader_acceleration = (current_other_acceleration, OTHER_ACCELERATION_RANGE)
-            return leader_acceleration
+    @staticmethod
+    def __check_acceleration_for_failures(acceleration: Optional[float],
+                                          current_timestamp: carla.Timestamp,
+                                          previous_timestamp: carla.Timestamp) \
+            -> Tuple[Optional[float], FailureType]:
+        """"""
+        """Check for omission"""
+        if acceleration is None:
+            acceleration_data = (None, FailureType.omission)
+            return acceleration_data
+
+        """Check for delay"""
+        if (0.05 - DELAY_THRESHOLD) <= (current_timestamp.elapsed_seconds - previous_timestamp.elapsed_seconds) <= (
+                0.05 + DELAY_THRESHOLD):
+            acceleration_data = (acceleration, FailureType.no_failure)
         else:
-            print("No other acceleration available")
-            # TODO
+            acceleration_data = (acceleration, FailureType.delay)
+
+        """Check for faulty value"""
+        if MAX_DECELERATION <= acceleration <= MAX_ACCELERATION:
+            if acceleration_data[1] == FailureType.no_failure:
+                acceleration_data = (acceleration, FailureType.no_failure)
+            else:
+                acceleration_data = (acceleration, FailureType.delay)
+        else:
+            if acceleration_data[1] == FailureType.no_failure:
+                acceleration_data = (acceleration, FailureType.faulty_value)
+            else:
+                acceleration_data = (acceleration, FailureType.faulty_delayed)
+        return acceleration_data
+
+    def __check_distance_for_failure(self, sensor_data: carla.ObstacleDetectionEvent,
+                                     ego_vehicle_previous_speed: Tuple[Optional[float], FailureType],
+                                     ego_vehicle_previous_acceleration: Tuple[Optional[float], FailureType],
+                                     front_vehicle_previous_acceleration: Tuple[Optional[float], FailureType],
+                                     front_vehicle_previous_speed: Tuple[Optional[float], FailureType],
+                                     previous_distance: Tuple[Optional[float], FailureType],
+                                     current_timestamp: carla.Timestamp,
+                                     previous_timestamp: carla.Timestamp)\
+            -> Tuple[Optional[float], FailureType]:
+
+        if sensor_data is None:
+            ego_distance = (None, FailureType.omission)
+            return ego_distance
+
+        delta_time = current_timestamp.elapsed_seconds - previous_timestamp.elapsed_seconds
+        v_fv: float = front_vehicle_previous_speed[0]
+        a_fv: float = front_vehicle_previous_acceleration[0]
+
+        v_ev: float = ego_vehicle_previous_speed[0]
+        a_ev: float = ego_vehicle_previous_acceleration[0]
+
+        p_dist = previous_distance[0]
+
+        if None not in {v_fv, a_fv, v_ev, a_ev, p_dist}:
+            expected_distance = (p_dist + ((v_fv + 0.5 * a_fv * delta_time) - (v_ev + 0.5 * a_ev * delta_time)) * delta_time)
+        else:
+            expected_distance = sensor_data.distance
+
+        if (0.05 - DELAY_THRESHOLD) <= (current_timestamp.elapsed_seconds - previous_timestamp.elapsed_seconds) <= (
+                0.05 + DELAY_THRESHOLD):
+            if (expected_distance - DISTANCE_THRESHOLD_FACTOR) <= sensor_data.distance <= \
+                    (expected_distance + DISTANCE_THRESHOLD_FACTOR):
+                ego_distance = (sensor_data.distance, FailureType.no_failure)
+                return ego_distance
+            else:
+                ego_distance = (sensor_data.distance, FailureType.faulty_value)
+                return ego_distance
+        else:
+            if (expected_distance * (1 - DISTANCE_THRESHOLD_FACTOR)) <= sensor_data.distance <= \
+                    (expected_distance * (1 + DISTANCE_THRESHOLD_FACTOR)):
+                ego_distance = (sensor_data.distance, FailureType.delay)
+                return ego_distance
+            else:
+                ego_distance = (sensor_data.distance, FailureType.faulty_delayed)
+                return ego_distance
 
     def __process_other_braking_light(self, other_braking_light: Optional[bool]) -> bool:
         if other_braking_light is not None:
@@ -87,24 +248,9 @@ class Monitor(object):
             print("No braking light available")
             # TODO
 
-    def __process_other_speed(self, other_speed) -> Optional[Tuple[float, float]]:
-        if other_speed is not None:
-            other_speed = (other_speed, OTHER_VELOCITY_RANGE)
-            return other_speed
-        else:
-            print("No other speed available")
-            # TODO
 
-    def __process_weather(self) -> Weather:
-        weather = self.carla_world.get_weather()
-        if weather.precipitation > 60.0:
-            return Weather.RAIN
-        elif weather.wetness > 60.0:
-            return Weather.RAIN
-        else:
-            return Weather.SUNSHINE
-
-    def calculate_vehicle_speed(self, velocity: carla.Vector3D) -> float:
+    @staticmethod
+    def calculate_vehicle_speed(velocity: carla.Vector3D) -> float:
         """Takes an carla velocity vector and transforms it into an speed value [m/s]
         :param velocity: velocity vector
         :type velocity: carla.Vector3D
