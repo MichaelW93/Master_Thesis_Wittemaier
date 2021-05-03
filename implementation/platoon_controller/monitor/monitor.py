@@ -1,7 +1,7 @@
 import carla
 import math
 
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING, Union
 
 from implementation.platoon_controller.knowledge.base_attribute import *
 from implementation.data_classes import EnvironmentKnowledge, MonitorInputData, FailureType
@@ -30,7 +30,7 @@ class Monitor(object):
 
     def create_environment_knowledge(self, monitor_input_data: MonitorInputData) -> EnvironmentKnowledge:
 
-        print("Monitor input data at monitor:", monitor_input_data)
+        #print("Monitor input data at monitor:", monitor_input_data)
         previous_environment_knowledge: EnvironmentKnowledge = self.knowledge.get_current_environment_knowledge()
         environment_knowledge = EnvironmentKnowledge()
         environment_knowledge.ego_name = self.ego_vehicle.role_name
@@ -113,7 +113,6 @@ class Monitor(object):
         environment_knowledge.speed_limit = monitor_input_data.speed_limit
         environment_knowledge.weather = monitor_input_data.weather
 
-        print("Environment knowledge created")
         return environment_knowledge
 
     @staticmethod
@@ -195,7 +194,7 @@ class Monitor(object):
                 acceleration_data = (acceleration, FailureType.faulty_delayed)
         return acceleration_data
 
-    def __check_distance_for_failure(self, sensor_data: carla.ObstacleDetectionEvent,
+    def __check_distance_for_failure(self, sensor_data: Union[carla.ObstacleDetectionEvent, float, None],
                                      ego_vehicle_previous_speed: Tuple[Optional[float], FailureType],
                                      ego_vehicle_previous_acceleration: Tuple[Optional[float], FailureType],
                                      front_vehicle_previous_acceleration: Tuple[Optional[float], FailureType],
@@ -207,6 +206,10 @@ class Monitor(object):
 
         if sensor_data is None:
             ego_distance = (None, FailureType.omission)
+            return ego_distance
+
+        if sensor_data == -1:
+            ego_distance = (-1, FailureType.no_front_vehicle)
             return ego_distance
 
         delta_time = current_timestamp.elapsed_seconds - previous_timestamp.elapsed_seconds

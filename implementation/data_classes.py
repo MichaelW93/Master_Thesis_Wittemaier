@@ -1,6 +1,6 @@
 import carla
 
-from typing import Optional, List, Tuple, TYPE_CHECKING
+from typing import Optional, List, Tuple, TYPE_CHECKING, Union
 
 from implementation.platoon_controller.knowledge.base_attribute import *
 from implementation.util import *
@@ -74,6 +74,7 @@ class SimulationState(object):
         self.leader_perform_emergency_brake: bool = False
 
         self.leader_target_speed: float = 60.0
+        self.environment_vehicles_target_speed: float = 60
 
         self.speed_limit: float = 60.0
         self.connection_strength: float = 100.0
@@ -110,7 +111,7 @@ class MonitorInputData(object):
         self.weather: Weather = Weather(1)
 
         self.ego_vehicle_acceleration: Optional[carla.IMUMeasurement] = None
-        self.ego_vehicle_distance: Optional[carla.ObstacleDetectionEvent] = None
+        self.ego_vehicle_distance: Union[carla.ObstacleDetectionEvent, float, None] = None
         self.ego_vehicle_speed: Optional[float] = None
         self.front_vehicle_braking_light: Optional[bool] = None
         self.ego_vehicle_role_name: str = ""
@@ -170,6 +171,8 @@ class FailureType(Enum):
     faulty_value = 3
     delay = 4
     faulty_delayed = 5
+    no_front_vehicle = 6
+    wrong_front_vehicle = 7
 
 
 class AdaptationTechnique(Enum):

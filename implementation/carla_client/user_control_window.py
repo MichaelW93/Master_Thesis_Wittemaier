@@ -45,6 +45,7 @@ class UserControlWindow(object):
             [sg.Checkbox("leader_breaking_light_available", default=True, key="-LEADER_BRAKING_LIGHT-")],
             [sg.InputText("60", key="-SPEED_LIMIT-"), sg.Text("Speed Limit")],
             [sg.InputText("60", key="-LEADER_TARGET_SPEED-"), sg.Text("Leader target speed")],
+            [sg.InputText("60", key="-ENVIRONMENT_TARGET_SPEED-"), sg.Text("Environment vehicles target speed")],
             [sg.Checkbox("Leader perform emergency brake", default=False, key="-PERFORM_EMERGENCY_BRAKE-")],
             [sg.Slider(range=(1, 100), default_value=100, resolution=25,
                        orientation="horizontal", key="-CONNECTION_STRENGTH-"),
@@ -54,7 +55,8 @@ class UserControlWindow(object):
                 sg.Radio("Fog", "WEATHER", default=False, key="-FOG-")],
             [sg.Button("Update Simulation", key="-UPDATE-"),
                 sg.Button("Reset Simulation", key="-RESET-"),
-                sg.Button("Exit Simulation", key="-EXIT-")]
+                sg.Button("Exit Simulation", key="-EXIT-")],
+            [sg.Button("Cut-In vehicle", key="-CUT_IN-"), sg.Button("Remove Environment Vehicle", key="-REMOVE-")]
         ]
 
     def __initialize_window(self):
@@ -72,6 +74,10 @@ class UserControlWindow(object):
                 break
             elif event == "-UPDATE-":
                 self.update_simulation(values)
+            elif event == "-CUT_IN-":
+                self.carla_control_client_queue.put("CUT_IN")
+            elif event == "-REMOVE-":
+                self.carla_control_client_queue.put("REMOVE")
             elif event == "-RESET-":
                 self.carla_control_client_queue.put("RESET")
             elif event == "-EXIT-":
@@ -94,6 +100,7 @@ class UserControlWindow(object):
         simulation_state.leader_acceleration_available = values["-LEADER_ACCELERATION-"]
         simulation_state.leader_braking_light_available = values["-LEADER_BRAKING_LIGHT-"]
         simulation_state.leader_target_speed = float(values["-LEADER_TARGET_SPEED-"])
+        simulation_state.environment_vehicles_target_speed = float(values["-ENVIRONMENT_TARGET_SPEED-"])
         simulation_state.speed_limit = float(values["-SPEED_LIMIT-"])
         simulation_state.connection_strength = float(values["-CONNECTION_STRENGTH-"])
 

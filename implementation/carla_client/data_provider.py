@@ -96,7 +96,6 @@ class DataProvider(object):
                         monitor_input_data.front_vehicles_acceleration.append(None)
 
             vehicles_monitor_input_data.append(monitor_input_data)
-            print(monitor_input_data)
 
         self.leader_vehicle.sensor_data = []
         for vehicle in self.managed_vehicles:
@@ -173,7 +172,7 @@ class DataProvider(object):
             if leader_acceleration > self.max_acceleration:
                 self.max_acceleration = leader_acceleration
 
-        print("Max acceleration = ", self.max_acceleration, " Max deceleration = ", self.max_deceleration)
+        #print("Max acceleration = ", self.max_acceleration, " Max deceleration = ", self.max_deceleration)
 
     @staticmethod
     def extract_sensor_data(sensor_data: List[Optional[carla.SensorData]]) -> \
@@ -205,8 +204,6 @@ class DataProvider(object):
         if ego_distance is None:
             if self.simulation_state.managed_vehicle_ego_distance_available[vehicle_number]:
                 ego_distance = -1
-                ego_distance = carla.ObstacleDetectionEvent()
-                ego_distance.distance = 50
 
         return ego_distance, ego_acceleration
 

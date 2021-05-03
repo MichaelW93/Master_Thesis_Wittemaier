@@ -21,9 +21,11 @@ class Vehicle(object):
 
         self.sensors: List[carla.Sensor] = []
 
-    def spawn_vehicle(self, spawn_location: carla.Location, vehicle_type: str) -> carla.Vehicle:
+    def spawn_vehicle(self, spawn_location: carla.Location, vehicle_type: str, color: str = None) -> carla.Vehicle:
         blueprint_library = self.carla_world.get_blueprint_library()
         blueprint = blueprint_library.find(vehicle_type)
+        if color is not None:
+            blueprint.set_attribute("color", color)
         while self.ego_vehicle is None:
             self.ego_vehicle = self.carla_world.try_spawn_actor(blueprint, spawn_location)
             self.carla_world.tick()
@@ -66,6 +68,47 @@ class Vehicle(object):
             self.imu_sensor = None
 
 
+class EnvironmentVehicle(Vehicle):
+
+    def __init__(self, carla_world, role_name):
+        super(EnvironmentVehicle, self).__init__(carla_world)
+        self.controller = None
+        self.steering_controller: Optional[CarlaSteeringAlgorithm] = None
+        self.role_name = role_name
+
+    def setup_vehicle(self):
+        args_long_dict = {
+            'K_P': LEADER_CONTROLLER_KP,
+            'K_D': LEADER_CONTROLLER_KD,
+            'K_I': LEADER_CONTROLLER_KI,
+            'dt': 1 / CARLA_SERVER_FPS
+        }
+        self.steering_controller = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.ego_vehicle)
+        self.controller = VehiclePIDController(self, args_long_dict)
+
+    def run_step(self, target_speed: float) -> None:
+        """Main loop for the Vehicle. Handles the calculation of the vehicle control.
+        :param target_speed: vehicles target speed in [km/h]"""
+
+        if self.controller is not None:
+            self.control = self.controller.run_step(target_speed=target_speed)
+        if self.steering_controller is not None:
+            self.control.steer = self.steering_controller.goToNextTargetLocation()
+        if self.control is not None:
+            self.ego_vehicle.apply_control(self.control)
+
+    def switch_lane_right(self):
+        waypoint = self.carla_world.get_map().get_waypoint(self.ego_vehicle.get_location())
+        right_lane_waypoint = waypoint.get_right_lane()
+        next_waypoint = right_lane_waypoint.next(40)
+        self.steering_controller.set_next_waypoint(next_waypoint)
+
+    def destroy(self):
+        if self.ego_vehicle is not None and self.ego_vehicle.is_alive:
+            self.ego_vehicle.destroy()
+            self.ego_vehicle = None
+
+
 class LeaderVehicle(Vehicle):
 
     def __init__(self, carla_world):
@@ -77,7 +120,7 @@ class LeaderVehicle(Vehicle):
     def run_step(self, manual_vehicle_control: Optional[carla.VehicleControl], simulation_state: SimulationState) -> None:
         if manual_vehicle_control is None:
             if self.steering_controller is not None and self.ego_vehicle is not None:
-                self.control = self.controller.run_step(None, simulation_state.leader_target_speed)
+                self.control = self.controller.run_step(target_speed=simulation_state.leader_target_speed)
                 self.control.steer = self.steering_controller.goToNextTargetLocation()
         else:
             if manual_vehicle_control.steer == 0:

@@ -20,9 +20,9 @@ class DistanceController(Controller):
 
     def __init__(self, ego_vehicle):
         super(DistanceController, self).__init__(ego_vehicle)
-        self.k1: float = 0.5
-        self.k2: float = 0.1
-        self.k3: float = 0.2  # proportional gain
+        self.k1: float = 1.0
+        self.k2: float = 0.2
+        self.k3: float = 0.4  # proportional gain
         self.k4: float = 0  # derivative gain
         self.theta: float = 0  # reduce noise
 
@@ -57,18 +57,23 @@ class DistanceController(Controller):
 
         des_distance = r + headway*speed_ego
 
-        print("Desired distance: ", des_distance)
+        #print("\n", self.ego_vehicle.role_name, "\n")
+        #print("Desired distance: ", des_distance)
+        #print("Actual distance: ", distance)
 
         error = distance - des_distance
 
         acc_ego = self.k3 * min(acc) + self.k2 * (speed_front - speed_ego) + self.k1 * error
-        print("Target accel ", acc_ego)
-        print(speed_ego)
-        target_speed = 0.5 * acc_ego * timestep * timestep + speed_ego
-        print("Target speed: ", target_speed)
+        #print("Target accel ", acc_ego)
+        #print("Ego speed: ", speed_ego * 3.6)
+        if acc_ego > 0:
+            ego_target_speed = ((0.5 * acc_ego * timestep * timestep + speed_ego) * 3.6) + 0.6
+        else:
+            ego_target_speed = ((0.5 * acc_ego * timestep * timestep + speed_ego) * 3.6)
+        #print("Target speed: ", ego_target_speed)
 
-        control = self.speed_controller.run_step(None, target_speed=target_speed)
-        print(control)
+        control = self.speed_controller.run_step(None, ego_target_speed)
+        #print(control)
         return control
 
     def __calculate_feedforward_filter(self):
@@ -102,7 +107,8 @@ class VehiclePIDController(Controller):
         self._world = self.ego_vehicle.ego_vehicle.get_world()
         self._lon_controller = PIDLongitudinalController(self.ego_vehicle.ego_vehicle, **args_longitudinal)
 
-    def run_step(self, environment_knowledge: "Optional[EnvironmentKnowledge]", target_speed: Optional[float]) -> carla.VehicleControl:
+    def run_step(self, environment_knowledge: "Optional[EnvironmentKnowledge]" = None,
+                 target_speed: Optional[float] = None) -> carla.VehicleControl:
 
         acceleration = self._lon_controller.run_step(target_speed)
         control = carla.VehicleControl()
