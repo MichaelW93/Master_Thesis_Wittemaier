@@ -35,6 +35,7 @@ class CarlaControlClient(object):
         self.environment_vehicles: List[Optional[EnvironmentVehicle]] = []
 
         self.data_provider: DataProvider = None
+        self.communication_handler: CommunicationHandler = CommunicationHandler()
         self.simulation_state: SimulationState = SimulationState()
 
         self.user_control_window_thread: threading.Thread = None
@@ -180,11 +181,13 @@ class CarlaControlClient(object):
         self.leader_vehicle.spawn_vehicle(spawn_point, "vehicle.bmw.grandtourer")
         self.leader_vehicle.setup_vehicle()
         self.carla_world.tick()
+        self.communication_handler.vehicles[self.leader_vehicle.ego_vehicle.id] = self.leader_vehicle
 
     def spawn_managed_vehicles(self) -> None:
         spawn_point_offset = 0
         for i in range(NUMBER_OF_MANAGED_VEHICLES):
-            self.managed_vehicles.append(ManagedVehicle(self.carla_world, f"Follower_{i}"))
+            vehicle = ManagedVehicle(self.carla_world, f"Follower_{i}")
+            self.managed_vehicles.append(vehicle)
             spawn_point = carla.Transform()
             spawn_point.location.x = MANAGED_VEHICLE_SPAWN_LOCATION_X + spawn_point_offset
             spawn_point.location.y = MANAGED_VEHICLE_SPAWN_LOCATION_Y
@@ -197,12 +200,15 @@ class CarlaControlClient(object):
             print("Managed vehicle spawned")
             spawn_point_offset -= 20
             self.carla_world.tick()
+            self.communication_handler.vehicles[vehicle.ego_vehicle.id] = vehicle
 
     def spawn_environment_vehicle(self, transform: carla.Transform) -> EnvironmentVehicle:
-        environment_vehicle = EnvironmentVehicle(self.carla_world, "Cut In Vehicle 1")
+        environment_vehicle = EnvironmentVehicle(self.carla_world, "Cut_In_Vehicle_1")
         self.environment_vehicles.append(environment_vehicle)
-        environment_vehicle.spawn_vehicle(transform, "vehicle.audi.tt", "0,255,0")
+        environment_vehicle.spawn_vehicle(transform, "vehicle.audi.tt", "0,255,0", "Cut_In_Vehicle_1")
         environment_vehicle.setup_vehicle()
+        self.carla_world.tick()
+        self.communication_handler.vehicles[environment_vehicle.ego_vehicle.id] = environment_vehicle
         return environment_vehicle
 
     def __run_cut_in_scenario(self):
@@ -243,15 +249,27 @@ class CarlaControlClient(object):
                 self.carla_world.tick()
                 world_snapshot = self.carla_world.get_snapshot()
 
-                vehicles_monitor_input_data = self.data_provider.collect_data(world_snapshot.timestamp,
-                                                                              self.simulation_state)
                 if MOVE_SPECTATOR:
                     self.move_spectator()
 
+                self.communication_handler.run_step(self.simulation_state)
+
                 manual_vehicle_control = self.manual_control_window.tick(self.pygame_clock)
                 self.leader_vehicle.run_step(manual_vehicle_control, self.simulation_state)
-                location = self.leader_vehicle.ego_vehicle.get_location()
 
+                timestamp = world_snapshot.timestamp
+
+                for vehicle_number in range(len(self.managed_vehicles)):
+                    self.managed_vehicles[vehicle_number].run_step(timestamp,
+                                                                   self.simulation_state.weather,
+                                                                   self.simulation_state.speed_limit)
+
+                if self.current_scenario is not None:
+                    self.current_scenario.run_step(self.simulation_state)
+
+                # Plotting and other random information
+                """Get max map coordinates"""
+                location = self.leader_vehicle.ego_vehicle.get_location()
                 if location.x > self.max_x:
                     self.max_x = location.x
                 elif location.x < self.min_x:
@@ -262,35 +280,15 @@ class CarlaControlClient(object):
                 elif location.y < self.min_y:
                     self.min_y = location.y
 
-                for vehicle_number in range(len(self.managed_vehicles)):
-                    #print(f"Monitor input for vehicle {self.managed_vehicles[vehicle_number].role_name}:"
-                    #      f"{vehicles_monitor_input_data[vehicle_number]}")
-                    #print("Monitor Input data at control client: ", vehicles_monitor_input_data[vehicle_number])
-                    self.managed_vehicles[vehicle_number].run_step(
-                        vehicles_monitor_input_data[vehicle_number], self.simulation_state)
-
                 if self.counter >= 5:
                     self.leader_speeds.append(velocity_to_speed(self.leader_vehicle.ego_vehicle.get_velocity()))
                     self.follower_1_speed.append(velocity_to_speed(self.managed_vehicles[0].get_velocity()))
                     self.follower_2_speed.append(velocity_to_speed(self.managed_vehicles[1].get_velocity()))
 
-                    if vehicles_monitor_input_data[0].ego_vehicle_distance == -1:
-                        self.follower_1_distance.append(vehicles_monitor_input_data[0].ego_vehicle_distance)
-                    else:
-                        self.follower_1_distance.append(vehicles_monitor_input_data[0].ego_vehicle_distance.distance)
-
-                    if vehicles_monitor_input_data[1].ego_vehicle_distance == -1:
-                        self.follower_2_distance.append(vehicles_monitor_input_data[1].ego_vehicle_distance)
-                    else:
-                        self.follower_2_distance.append(vehicles_monitor_input_data[1].ego_vehicle_distance.distance)
-
                     self.elapsed_seconds.append(world_snapshot.timestamp.elapsed_seconds)
                     self.counter = 0
                 else:
                     self.counter += 1
-
-                if self.current_scenario is not None:
-                    self.current_scenario.run_step(self.simulation_state)
 
                 if world_snapshot.timestamp.elapsed_seconds > 10:
                     #self.plot_vehicle_speed()
@@ -312,9 +310,9 @@ class CarlaControlClient(object):
             simulation_state.leader_acceleration_available = False
             simulation_state.leader_speed_available = False
             for i in range(len(self.managed_vehicles)):
-                simulation_state.managed_vehicle_ego_distance_available[i] = False
-                simulation_state.managed_vehicle_acceleration_to_other_available[i] = False
-                simulation_state.managed_vehicle_speed_to_other_available[i] = False
+                simulation_state.followers_distance_available[i] = False
+                simulation_state.vehicles_acceleration_available[i] = False
+                simulation_state.vehicles_speed_available[i] = False
                 simulation_state.managed_vehicle_front_vehicle_braking_light_available[i] = False
         return simulation_state
 

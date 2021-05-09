@@ -21,9 +21,9 @@ class PlatoonController(object):
         self.planner: Planner = Planner(self.knowledge)
         self.executor: Executor = Executor(self.knowledge, self.ego_vehicle)
 
-    def run_step(self, data: MonitorInputData) -> EnvironmentKnowledge:
+    def run_step(self, timestamp: carla.Timestamp, weather: carla.WeatherParameters, speed_limit: float) -> EnvironmentKnowledge:
 
-        environment_knowledge = self.monitor.run_step(data)
+        environment_knowledge = self.monitor.run_step(timestamp, weather, speed_limit)
         adaptation = self.analyzer.run_step(environment_knowledge)
         plan = self.planner.run_step(adaptation, environment_knowledge)
         self.executor.run_step(plan)

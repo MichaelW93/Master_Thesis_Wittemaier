@@ -1,6 +1,7 @@
 import carla
 
-from typing import Optional, List, Tuple, TYPE_CHECKING, Union
+from typing import Optional, List, Tuple, TYPE_CHECKING, Union, Dict
+from dataclasses import dataclass
 
 from implementation.platoon_controller.knowledge.base_attribute import *
 from implementation.util import *
@@ -9,6 +10,45 @@ if TYPE_CHECKING:
     from implementation.vehicle.controller import Controller
 
 
+class Plan(Enum):
+    CACC_CONTROLLER = 1
+
+
+class FailureType(Enum):
+
+    no_failure = 1
+    omission = 2
+    faulty_value = 3
+    delay = 4
+    faulty_delayed = 5
+    no_front_vehicle = 6
+    wrong_front_vehicle = 7
+
+
+class AdaptationTechnique(Enum):
+    NONE = 1
+    STRUCTURAL = 2
+    PARAMETER = 3
+
+
+@dataclass()
+class OtherVehicle:
+    id: int
+    platoonable: bool
+    is_leader: bool = False
+    is_front_vehicle: bool = False
+    measured_speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    measured_acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    measured_distance: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+
+
+@dataclass()
+class PlatoonVehicle(OtherVehicle):
+    speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+
+
+@dataclass()
 class EnvironmentKnowledge(object):
 
     def __init__(self):
@@ -16,17 +56,13 @@ class EnvironmentKnowledge(object):
         self.timestamp: Optional[carla.Timestamp] = carla.Timestamp()
         self.timestamp.elapsed_seconds = 0.0
         self.time_to_last_step: float = 0.05
-        self.connection_strength: Optional[float] = 0
+        self.communication_delay: Optional[float] = 0
         self.ego_acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
         self.ego_distance: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
         self.ego_speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
         self.ego_name: str = ""
 
-        self.front_vehicles_speed: List[Tuple[Optional[float], FailureType]] = []
-        self.front_vehicles_acceleration: List[Tuple[Optional[float], FailureType]] = []
-
-        self.leader_acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-        self.leader_speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+        self.other_vehicles: Dict[int, Union[OtherVehicle, PlatoonVehicle]] = {}
 
         self.speed_limit: Optional[float] = 60
         self.weather: Optional[Weather] = Weather.SUNSHINE
@@ -40,7 +76,7 @@ class EnvironmentKnowledge(object):
         string = (
             f"Vehicle name: {self.ego_name} {newline}"
             f"Timestamp: {self.timestamp.elapsed_seconds} {newline}"
-            f"Connection strength: {self.connection_strength} {newline}"
+            f"Connection strength: {self.communication_delay} {newline}"
             f"ego acceleration: {self.ego_acceleration} {newline}"
             f"ego distance: {self.ego_distance} {newline}"
             f"ego speed: {self.__convert_to_kmh(self.ego_speed[0])} km/h {self.ego_speed[1]}{newline}"
@@ -63,15 +99,9 @@ class EnvironmentKnowledge(object):
 class SimulationState(object):
 
     def __init__(self):
-        self.managed_vehicle_speed_to_other_available: List[bool] = initialize_list(True, NUMBER_OF_MANAGED_VEHICLES)
-        self.managed_vehicle_acceleration_to_other_available: List[bool] = initialize_list(True, NUMBER_OF_MANAGED_VEHICLES)
-        self.managed_vehicle_ego_distance_available: List[bool] = initialize_list(True, NUMBER_OF_MANAGED_VEHICLES)
-        self.managed_vehicle_front_vehicle_braking_light_available: List[bool] = initialize_list(True, NUMBER_OF_MANAGED_VEHICLES)
-
-        self.leader_speed_available: bool = True
-        self.leader_acceleration_available: bool = True
-        self.leader_braking_light_available: bool = True
-        self.leader_perform_emergency_brake: bool = False
+        self.vehicles_speed_available: Dict[int, bool] = {}
+        self.vehicles_acceleration_available: Dict[int, bool] = {}
+        self.followers_distance_available: Dict[int, bool] = {}
 
         self.leader_target_speed: float = 60.0
         self.environment_vehicles_target_speed: float = 60
@@ -83,17 +113,11 @@ class SimulationState(object):
     def __str__(self) -> str:
         newline = '\n'
         managed_vehicles_string = ""
-        for i in range(len(self.managed_vehicle_ego_distance_available)):
-            managed_vehicles_string += f"managed vehicle {i} speed available: {self.managed_vehicle_speed_to_other_available[i]} {newline}" \
-                                       f"managed vehicle {i} acceleration available: {self.managed_vehicle_acceleration_to_other_available[i]} {newline}" \
-                                       f"managed vehicle {i} distance available: {self.managed_vehicle_ego_distance_available[i]} {newline}" \
-                                       f"managed vehicle {i} braking light available: {self.managed_vehicle_front_vehicle_braking_light_available[i]} {newline}"
+        i = 0
         string = f"Current simulation state:{newline} " \
-                 f"{managed_vehicles_string} " \
-                 f"leader speed available: {self.leader_speed_available}{newline}" \
-                 f"leader acceleration available: {self.leader_acceleration_available}{newline}" \
-                 f"leader braking_light available: {self.leader_braking_light_available}{newline}" \
-                 f"leader perform emergency brake: {self.leader_perform_emergency_brake}{newline}" \
+                 f"{self.vehicles_speed_available} {newline}" \
+                 f"{self.vehicles_acceleration_available} {newline}" \
+                 f"{self.followers_distance_available} {newline}" \
                  f"leader target speed: {self.leader_target_speed} {newline}" \
                  f"speed limit: {self.speed_limit} {newline}" \
                  f"connection_strength: {self.connection_strength} {newline}" \
@@ -154,29 +178,18 @@ class MonitorInputData(object):
             return speed * 3.6
 
 
+@dataclass()
+class CommunicationData:
+    vehicle_id: int = -1
+    timestamp: carla.Timestamp = None
+    leader_id: int = -1
+    front_id: int = -1
+    speed: float = -1
+    acceleration: float = -1
+
+
 class SystemState(object):
 
     def __init__(self):
         self.controller: Optional["Controller"] = None
-
-
-class Plan(Enum):
-    CACC_CONTROLLER = 1
-
-
-class FailureType(Enum):
-
-    no_failure = 1
-    omission = 2
-    faulty_value = 3
-    delay = 4
-    faulty_delayed = 5
-    no_front_vehicle = 6
-    wrong_front_vehicle = 7
-
-
-class AdaptationTechnique(Enum):
-    NONE = 1
-    STRUCTURAL = 2
-    PARAMETER = 3
 

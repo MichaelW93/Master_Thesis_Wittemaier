@@ -1,31 +1,37 @@
 import carla
 
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from implementation.vehicle.carla_steering_algorithm import CarlaSteeringAlgorithm
 from implementation.vehicle.controller import VehiclePIDController
 from implementation.configuration_parameter import *
-from implementation.data_classes import EnvironmentKnowledge, SimulationState, MonitorInputData
+from implementation.data_classes import EnvironmentKnowledge, SimulationState, MonitorInputData, CommunicationData
 from implementation.platoon_controller.platoon_controller import PlatoonController
 from implementation.platoon_controller.monitor.monitor import Monitor
+
+if TYPE_CHECKING:
+    from implementation.carla_client.communication_handler import CommunicationHandler
 
 
 class Vehicle(object):
 
-    def __init__(self, carla_world) -> None:
+    def __init__(self, carla_world, communication_handler: CommunicationHandler) -> None:
         self.carla_world: carla.World = carla_world
         self.ego_vehicle: Optional[carla.Vehicle] = None
         self.imu_sensor: Optional[carla.Sensor] = None
         self.sensor_data: List[Optional[carla.SensorData]] = []
         self.control: Optional[carla.VehicleControl] = None
         self.role_name: str = ""
+        self.comm_handler: "CommunicationHandler" = communication_handler
 
         self.sensors: List[carla.Sensor] = []
 
-    def spawn_vehicle(self, spawn_location: carla.Location, vehicle_type: str, color: str = None) -> carla.Vehicle:
+    def spawn_vehicle(self, spawn_location: carla.Location, vehicle_type: str, color: str = None, role_name: Optional[str] = None) -> carla.Vehicle:
         blueprint_library = self.carla_world.get_blueprint_library()
         blueprint = blueprint_library.find(vehicle_type)
         if color is not None:
             blueprint.set_attribute("color", color)
+            if role_name is not None:
+                blueprint.set_attribute("role_name", role_name)
         while self.ego_vehicle is None:
             self.ego_vehicle = self.carla_world.try_spawn_actor(blueprint, spawn_location)
             self.carla_world.tick()
@@ -45,7 +51,9 @@ class Vehicle(object):
         """
 
     def get_sensor_data(self) -> List[Optional[carla.SensorData]]:
-        return self.sensor_data
+        data = self.sensor_data
+        self.sensor_data = []
+        return data
 
     def get_velocity(self) -> carla.Vector3D:
         """
@@ -54,6 +62,9 @@ class Vehicle(object):
         :rtype: carla.Vector3D
         """
         return self.ego_vehicle.get_velocity()
+
+    def send_communication_data(self, comm_data: CommunicationData):
+        self.comm_handler.set_vehicle_data(comm_data)
 
     def destroy(self):
         for sensor in self.sensors:
@@ -98,7 +109,8 @@ class EnvironmentVehicle(Vehicle):
             self.ego_vehicle.apply_control(self.control)
 
     def switch_lane_right(self):
-        waypoint = self.carla_world.get_map().get_waypoint(self.ego_vehicle.get_location())
+        waypoint = self.carla_world.get_map().get_waypoint(self.ego_vehicle.get_location(), project_to_road=True,
+                                                           lane_type=carla.LaneType.Driving)
         right_lane_waypoint = waypoint.get_right_lane()
         next_waypoint = right_lane_waypoint.next(40)
         self.steering_controller.set_next_waypoint(next_waypoint)
@@ -116,6 +128,7 @@ class LeaderVehicle(Vehicle):
         self.controller = None
         self.steering_controller: Optional[CarlaSteeringAlgorithm] = None
         self.role_name = "Leader"
+        self.has_front_vehicle = False
 
     def run_step(self, manual_vehicle_control: Optional[carla.VehicleControl], simulation_state: SimulationState) -> None:
         if manual_vehicle_control is None:
@@ -176,10 +189,11 @@ class ManagedVehicle(Vehicle):
         self.platoon_controller: Optional[PlatoonController] = None
         self.role_name: str = role_name
         self.front_vehicle_is_leader: bool = False
+        self.has_front_vehicle = False
 
-    def run_step(self, monitor_input: MonitorInputData, simulation_state: SimulationState) -> None:
+    def run_step(self, timestamp: carla.Timestamp, weather: carla.WeatherParameters, speed_limit: float) -> None:
 
-        environment_knowledge = self.platoon_controller.run_step(monitor_input)
+        environment_knowledge = self.platoon_controller.run_step(timestamp, weather, speed_limit)
 
         self.control = self.controller.run_step(environment_knowledge, environment_knowledge.speed_limit)
         self.control.steer = self.steering_controller.goToNextTargetLocation()
@@ -207,7 +221,7 @@ class ManagedVehicle(Vehicle):
         blueprint = blueprint_library.find("sensor.other.obstacle")
         blueprint.set_attribute("distance", str(50))
         blueprint.set_attribute("only_dynamics", str(True))
-        blueprint.set_attribute("hit_radius", str(5))
+        blueprint.set_attribute("hit_radius", str(2))
         if DEBUG_MODE:
             blueprint.set_attribute("debug_linetrace", str(True))
 

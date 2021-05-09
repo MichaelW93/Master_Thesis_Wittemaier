@@ -46,9 +46,10 @@ class CarlaSteeringAlgorithm(object):
         # False can result in none object if no corresponding waypoint is found
         current_waypoint = self.__map.get_waypoint(current_location, project_to_road=True,
                                                    lane_type=carla.LaneType.Driving)
-        # print(current_waypoint)
         if self.__next_waypoint is not None:
-            if current_waypoint == self.__next_waypoint:
+            if current_waypoint.lane_id == self.__next_waypoint[0].lane_id:
+                if self.__vehicle.attributes["role_name"] == "Cut_In_Vehicle_1":
+                    print("Target waypoint reached")
                 target = current_waypoint.next(8.0)
                 self.__next_waypoint = None
             else:
@@ -58,6 +59,9 @@ class CarlaSteeringAlgorithm(object):
         # for i in target:
         #     print(i)
         target_position = target[0].transform.location
+        if self.__vehicle.attributes["role_name"] == "Cut_In_Vehicle_1":
+            print("Current Waypoint: ", current_waypoint)
+            print("Target location for steering controller: ", target[0])
 
         ######
         # calculate steering value based on the angle between target and current location

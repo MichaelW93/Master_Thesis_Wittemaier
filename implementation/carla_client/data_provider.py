@@ -108,7 +108,7 @@ class DataProvider(object):
             imu_data, distance_data = self.extract_sensor_data(self.managed_vehicles[i].get_sensor_data())
             for j, data in reversed(list(enumerate(self.managed_vehicles_acceleration_data[i]))):
                 if j == 0:
-                    if self.simulation_state.managed_vehicle_acceleration_to_other_available[i]:
+                    if self.simulation_state.vehicles_acceleration_available[i]:
                         self.managed_vehicles_acceleration_data[i][j] = imu_data
                     else:
                         self.managed_vehicles_acceleration_data[i][j] = None
@@ -117,7 +117,7 @@ class DataProvider(object):
 
             for j, data in reversed(list(enumerate(self.managed_vehicles_distance[i]))):
                 if j == 0:
-                    if self.simulation_state.managed_vehicle_ego_distance_available[i]:
+                    if self.simulation_state.followers_distance_available[i]:
                         if imu_data is None:
                             self.managed_vehicles_distance[i][j] = -1
                         else:
@@ -132,7 +132,7 @@ class DataProvider(object):
 
             for j, data in reversed(list(enumerate(self.managed_vehicles_speed_data[i]))):
                 if j == 0:
-                    if self.simulation_state.managed_vehicle_speed_to_other_available[i]:
+                    if self.simulation_state.vehicles_speed_available[i]:
                         self.managed_vehicles_speed_data[i][j] = speed
                     else:
                         self.managed_vehicles_speed_data[i][j] = None
@@ -202,7 +202,7 @@ class DataProvider(object):
 
         """No vehicle in front detected"""
         if ego_distance is None:
-            if self.simulation_state.managed_vehicle_ego_distance_available[vehicle_number]:
+            if self.simulation_state.followers_distance_available[vehicle_number]:
                 ego_distance = -1
 
         return ego_distance, ego_acceleration
