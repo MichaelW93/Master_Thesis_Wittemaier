@@ -5,7 +5,9 @@ from implementation.data_classes import *
 from implementation.util import *
 
 class Scenario(object):
-    pass
+
+    def run_step(self, sim_state: SimulationState):
+        raise NotImplementedError
 
 
 class CutInScenario(Scenario):

@@ -34,9 +34,7 @@ class Monitor(object):
         self.communication_data = self.ego_vehicle.comm_handler.get_all_vehicle_data()
 
         # Get own front vehicle
-        self.process_front_id(ego_distance_data)
-
-        self.check_platoon()
+        self.check_platoon(ego_distance_data)
 
         environment_knowledge = self.create_environment_knowledge(ego_distance_data,
                                                                   ego_acc_data,
@@ -45,17 +43,52 @@ class Monitor(object):
                                                                   weather,
                                                                   speed_limit)
         self.knowledge.store_environment_knowledge(environment_knowledge)
+        comm_data = self.built_communication_data(timestamp, environment_knowledge.ego_speed[0], environment_knowledge.ego_acceleration[0])
+        self.ego_vehicle.send_communication_data(comm_data)
+
         if DEBUG_MODE:
             print(environment_knowledge.__str__())
-
+        if self.ego_vehicle.role_name == "Follower_1":
+            print("Knowledge, other vehicles: ", self.knowledge.other_vehicles)
+            print("Environment_knowledge: ", environment_knowledge)
         return environment_knowledge
 
-    def check_platoon(self):
+    def built_communication_data(self, timestamp: carla.Timestamp, speed: float, acceleration: float) -> "CommunicationData":
+        data = CommunicationData()
+        data.front_id = self.knowledge.front_vehicle_id
+        data.leader_id = self.knowledge.leader_id
+        data.timestamp = timestamp
+        data.vehicle_id = self.ego_vehicle.ego_vehicle.id
+        data.speed = speed
+        data.acceleration = acceleration
+
+        return data
+
+    def check_platoon(self, data: Union[carla.ObstacleDetectionEvent, int]):
+        """Returns the Id of the current front vehicle, if one exists"""
+        if data == -1:
+            # No front vehicle detected
+            self.knowledge.front_vehicle_id = -1
+            self.knowledge.leader_id = -1
+            self.knowledge.other_vehicles = {}
+        else:
+            front_id = data.other_actor.id
+            self.knowledge.leader_id = front_id
+            self.knowledge.front_vehicle_id = front_id
+            if front_id in self.knowledge.other_vehicles:
+                self.knowledge.other_vehicles[front_id].is_front_vehicle = True
+                self.knowledge.other_vehicles[front_id].is_leader = True
+            else:
+                vehicle = OtherVehicle(is_front_vehicle=True, is_leader=True, id=front_id)
+                self.knowledge.other_vehicles[front_id] = vehicle
+
         front_id = self.knowledge.front_vehicle_id
         while front_id != -1:
             if front_id in self.communication_data:
                 # Platoonable vehicle
                 front_data: CommunicationData = self.communication_data[front_id]
+                if front_id in self.knowledge.other_vehicles:
+                    self.knowledge.other_vehicles[front_id].platoonable = True
                 if front_data.front_id == -1:
                     # Vehicle has no front_vehicle --> is Leading vehicle
                     if front_id in self.knowledge.other_vehicles:
@@ -65,10 +98,12 @@ class Monitor(object):
                         front_id = -1
                     else:
                         # Vehicle is not known --> create a new one
-                        vehicle = PlatoonVehicle(id=front_id, platoonable=True, is_leader=True)
+                        vehicle = OtherVehicle(id=front_id, platoonable=True, is_leader=True)
                         self.knowledge.other_vehicles[front_id] = vehicle
                 else:
                     # go to the next vehicle
+                    if front_id in self.knowledge.other_vehicles:
+                        self.knowledge.other_vehicles[front_id].is_leader = False
                     front_id = front_data.front_id
             else:
                 # Vehicle is not platoonable
@@ -85,19 +120,6 @@ class Monitor(object):
     def check_communication_data(self, comm_data: "CommunicationData", previous_timestamp):
         acc_data = self.__check_acceleration_for_failures
 
-    def process_front_id(self, data: Union[carla.ObstacleDetectionEvent, int]):
-        """Returns the Id of the current front vehicle, if one exists"""
-        if data == -1:
-            # No front vehicle detected
-            self.knowledge.front_vehicle_id = -1
-            self.knowledge.leader_id = -1
-        else:
-            front_id = data.other_actor.id
-            if self.knowledge.front_vehicle_id == -1:
-                self.knowledge.leader_id = front_id
-                self.knowledge.other_vehicles[front_id].is_leader = True
-            self.knowledge.front_vehicle_id = front_id
-            self.knowledge.other_vehicles[front_id].is_front_vehicle = True
 
     def process_sensor_data(self, sensor_data: List[carla.SensorData]) -> \
         Tuple[Union[carla.ObstacleDetectionEvent, int], carla.IMUMeasurement]:
@@ -119,7 +141,6 @@ class Monitor(object):
     def create_environment_knowledge(self, ego_distance: carla.ObstacleDetectionEvent,
                                      ego_acc: carla.IMUMeasurement,
                                      ego_speed: float,
-                                     comm_data: List["CommunicationData"],
                                      timestamp: carla.Timestamp,
                                      weather: carla.WeatherParameters,
                                      speed_limit: float) -> EnvironmentKnowledge:
@@ -131,7 +152,8 @@ class Monitor(object):
 
         environment_knowledge.ego_name = self.ego_vehicle.role_name
         environment_knowledge.timestamp = timestamp
-        environment_knowledge.communication_delay = timestamp.elapsed_seconds - comm_data[0].timestamp.elapsed_seconds
+        if len(self.communication_data) > 0:
+            environment_knowledge.communication_delay = timestamp.elapsed_seconds - list(self.communication_data.values())[0].timestamp.elapsed_seconds
         environment_knowledge.time_to_last_step = timestamp.elapsed_seconds - \
                                                   previous_environment_knowledge.timestamp.elapsed_seconds
 
@@ -147,36 +169,40 @@ class Monitor(object):
             timestamp,
             previous_environment_knowledge.timestamp)
 
-        for vehicle in self.knowledge.other_vehicles:
-            vehicle_comm_data = self.communication_data[vehicle.id]
-            vehicle_acc = self.__check_acceleration_for_failures(
-                vehicle_comm_data.acceleration, timestamp,
+        for _, vehicle in self.knowledge.other_vehicles.items():
+            if vehicle.id in self.communication_data:
+                vehicle_comm_data = self.communication_data[vehicle.id]
+                vehicle_acc = self.__check_acceleration_for_failures(
+                    vehicle_comm_data.acceleration, timestamp,
+                    previous_environment_knowledge.timestamp)
+
+                environment_knowledge.other_vehicles[vehicle.id] = vehicle
+
+                if self.knowledge.front_vehicle_id in previous_environment_knowledge.other_vehicles:
+                    vehicle_speed = self.__check_speed_for_failures(
+                        vehicle_comm_data.speed,
+                        previous_environment_knowledge.other_vehicles[vehicle.id].speed,
+                        previous_environment_knowledge.other_vehicles[vehicle.id].acceleration,
+                        previous_environment_knowledge.timestamp,
+                        timestamp)
+                    environment_knowledge.other_vehicles[vehicle.id].speed = vehicle_speed
+                environment_knowledge.other_vehicles[vehicle.id].acceleration = vehicle_acc
+
+        if self.knowledge.front_vehicle_id in previous_environment_knowledge.other_vehicles:
+            environment_knowledge.ego_distance = self.__check_distance_for_failure(
+                ego_distance,
+                previous_environment_knowledge.ego_speed,
+                previous_environment_knowledge.ego_acceleration,
+                previous_environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].acceleration,
+                previous_environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].speed,
+                previous_environment_knowledge.ego_distance,
+                timestamp,
                 previous_environment_knowledge.timestamp)
-
-            environment_knowledge.other_vehicles[vehicle.id] = vehicle
-
-            vehicle_speed = self.__check_speed_for_failures(
-                vehicle_comm_data.speed,
-                previous_environment_knowledge.other_vehicles[vehicle.id].speed,
-                previous_environment_knowledge.other_vehicles[vehicle.id].acceleration,
-                previous_environment_knowledge.timestamp,
-                timestamp)
-
-            environment_knowledge.other_vehicles[vehicle.id].acceleration = vehicle_acc
-            environment_knowledge.other_vehicles[vehicle.id].speed = vehicle_speed
-
-        environment_knowledge.ego_distance = self.__check_distance_for_failure(
-            ego_distance,
-            previous_environment_knowledge.ego_speed,
-            previous_environment_knowledge.ego_acceleration,
-            previous_environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].acceleration,
-            previous_environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].speed,
-            previous_environment_knowledge.ego_distance,
-            timestamp,
-            previous_environment_knowledge.timestamp)
 
         environment_knowledge.speed_limit = speed_limit
         environment_knowledge.weather = weather
+        environment_knowledge.front_vehicle_id = self.knowledge.front_vehicle_id
+        environment_knowledge.leader_id = self.knowledge.leader_id
 
         return environment_knowledge
 
@@ -259,7 +285,6 @@ class Monitor(object):
                 acceleration_data = (acceleration, FailureType.faulty_delayed)
         return acceleration_data
 
-    @staticmethod
     def __check_distance_for_failure(self, sensor_data: Union[carla.ObstacleDetectionEvent, float, None],
                                      ego_vehicle_previous_speed: Tuple[Optional[float], FailureType],
                                      ego_vehicle_previous_acceleration: Tuple[Optional[float], FailureType],

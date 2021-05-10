@@ -40,15 +40,13 @@ class DistanceController(Controller):
 
     def __calculate_throttle_value(self, environment_knowledge: "EnvironmentKnowledge"):
 
-        acc_leader = environment_knowledge.leader_acceleration[0]
+        speed_front = 0
         acc = []
-        for acceleration_data in environment_knowledge.front_vehicles_acceleration:
-            acc.append(acceleration_data[0])
-        acc.append(acc_leader)
-        if self.ego_vehicle.front_vehicle_is_leader:
-            speed_front = environment_knowledge.leader_speed[0]
-        else:
-            speed_front = environment_knowledge.front_vehicles_speed[-1][0]
+        for _, vehicle in environment_knowledge.other_vehicles.items():
+            acc.append(vehicle.acceleration[0])
+            if vehicle.is_front_vehicle:
+                speed_front = vehicle.speed[0]
+
         speed_ego = environment_knowledge.ego_speed[0]
         distance = environment_knowledge.ego_distance[0]
         headway = 0.5

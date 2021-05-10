@@ -14,6 +14,7 @@ from implementation.carla_client.scenarios import *
 from implementation.platoon_controller.knowledge.base_attribute import Weather
 from implementation.vehicle.vehicles import *
 from implementation.util import *
+from implementation.carla_client.communication_handler import CommunicationHandler
 
 
 class CarlaControlClient(object):
@@ -27,7 +28,6 @@ class CarlaControlClient(object):
 
         self.pygame_clock = pygame.time.Clock()
         self.window_control_queue = queue.Queue()
-        self.user_control_window: UserControlWindow = UserControlWindow(self.window_control_queue)
         self.manual_control_window: ManualControlWindow = None
 
         self.leader_vehicle: LeaderVehicle = None
@@ -60,6 +60,18 @@ class CarlaControlClient(object):
         self.counter = 0
 
         self.setup_simulation()
+
+        follower_id: List[int] = []
+        for vehicle in self.managed_vehicles:
+            follower_id.append(vehicle.ego_vehicle.id)
+        for vehicle in self.environment_vehicles:
+            follower_id.append(vehicle.ego_vehicle.id)
+        self.user_control_window: UserControlWindow = UserControlWindow(self.window_control_queue,
+                                                                        self.leader_vehicle.ego_vehicle.id,
+                                                                        follower_id)
+        self.user_control_window_thread = threading.Thread(target=self.user_control_window_thread_execution)
+        self.user_control_window_thread.start()
+
         self.game_loop()
 
     def setup_simulation(self):
@@ -95,9 +107,6 @@ class CarlaControlClient(object):
         self.manual_control_window = ManualControlWindow(self.carla_world, self.carla_map,
                                                          self.leader_vehicle.ego_vehicle,
                                                          self.leader_camera, self.carla_client)
-
-        self.user_control_window_thread = threading.Thread(target=self.user_control_window_thread_execution)
-        self.user_control_window_thread.start()
 
     def user_control_window_thread_execution(self):
         self.user_control_window.window_loop()
@@ -172,7 +181,7 @@ class CarlaControlClient(object):
         self.carla_world.set_weather(new_weather)
 
     def spawn_leader(self) -> None:
-        self.leader_vehicle = LeaderVehicle(self.carla_world)
+        self.leader_vehicle = LeaderVehicle(self.carla_world, self.communication_handler)
         spawn_point = carla.Transform()
         spawn_point.location.x = LEADER_SPAWN_LOCATION_X
         spawn_point.location.y = LEADER_SPAWN_LOCATION_Y
@@ -186,7 +195,7 @@ class CarlaControlClient(object):
     def spawn_managed_vehicles(self) -> None:
         spawn_point_offset = 0
         for i in range(NUMBER_OF_MANAGED_VEHICLES):
-            vehicle = ManagedVehicle(self.carla_world, f"Follower_{i}")
+            vehicle = ManagedVehicle(self.carla_world, f"Follower_{i}", self.communication_handler)
             self.managed_vehicles.append(vehicle)
             spawn_point = carla.Transform()
             spawn_point.location.x = MANAGED_VEHICLE_SPAWN_LOCATION_X + spawn_point_offset
@@ -203,7 +212,7 @@ class CarlaControlClient(object):
             self.communication_handler.vehicles[vehicle.ego_vehicle.id] = vehicle
 
     def spawn_environment_vehicle(self, transform: carla.Transform) -> EnvironmentVehicle:
-        environment_vehicle = EnvironmentVehicle(self.carla_world, "Cut_In_Vehicle_1")
+        environment_vehicle = EnvironmentVehicle(self.carla_world, "Cut_In_Vehicle_1", self.communication_handler)
         self.environment_vehicles.append(environment_vehicle)
         environment_vehicle.spawn_vehicle(transform, "vehicle.audi.tt", "0,255,0", "Cut_In_Vehicle_1")
         environment_vehicle.setup_vehicle()
@@ -252,13 +261,10 @@ class CarlaControlClient(object):
                 if MOVE_SPECTATOR:
                     self.move_spectator()
 
-                self.communication_handler.run_step(self.simulation_state)
-
-                manual_vehicle_control = self.manual_control_window.tick(self.pygame_clock)
-                self.leader_vehicle.run_step(manual_vehicle_control, self.simulation_state)
-
                 timestamp = world_snapshot.timestamp
-
+                self.communication_handler.run_step(self.simulation_state)
+                manual_vehicle_control = self.manual_control_window.tick(self.pygame_clock)
+                self.leader_vehicle.run_step(manual_vehicle_control, self.simulation_state, timestamp)
                 for vehicle_number in range(len(self.managed_vehicles)):
                     self.managed_vehicles[vehicle_number].run_step(timestamp,
                                                                    self.simulation_state.weather,
@@ -313,7 +319,6 @@ class CarlaControlClient(object):
                 simulation_state.followers_distance_available[i] = False
                 simulation_state.vehicles_acceleration_available[i] = False
                 simulation_state.vehicles_speed_available[i] = False
-                simulation_state.managed_vehicle_front_vehicle_braking_light_available[i] = False
         return simulation_state
 
     def plot_vehicle_speed(self):

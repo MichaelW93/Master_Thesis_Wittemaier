@@ -1,7 +1,7 @@
 import carla
 
 from typing import Optional, List, Tuple, TYPE_CHECKING, Union, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from implementation.platoon_controller.knowledge.base_attribute import *
 from implementation.util import *
@@ -34,39 +34,35 @@ class AdaptationTechnique(Enum):
 @dataclass()
 class OtherVehicle:
     id: int
-    platoonable: bool
+    platoonable: bool = False
     is_leader: bool = False
     is_front_vehicle: bool = False
     measured_speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     measured_acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     measured_distance: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-
-
-@dataclass()
-class PlatoonVehicle(OtherVehicle):
     speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
 
 
 @dataclass()
 class EnvironmentKnowledge(object):
+    timestamp: Optional[carla.Timestamp] = carla.Timestamp()
+    timestamp.elapsed_seconds = 0.0
+    time_to_last_step: float = 0.05
+    communication_delay: Optional[float] = 0
+    ego_acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    ego_distance: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    ego_speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    ego_name: str = ""
 
-    def __init__(self):
+    leader_id: int = -1
+    front_vehicle_id: int = -1
+    other_vehicles: Dict[int, OtherVehicle] = field(default_factory=dict)
 
-        self.timestamp: Optional[carla.Timestamp] = carla.Timestamp()
-        self.timestamp.elapsed_seconds = 0.0
-        self.time_to_last_step: float = 0.05
-        self.communication_delay: Optional[float] = 0
-        self.ego_acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-        self.ego_distance: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-        self.ego_speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-        self.ego_name: str = ""
+    speed_limit: Optional[float] = 60
+    weather: Optional[Weather] = Weather.SUNSHINE
 
-        self.other_vehicles: Dict[int, Union[OtherVehicle, PlatoonVehicle]] = {}
-
-        self.speed_limit: Optional[float] = 60
-        self.weather: Optional[Weather] = Weather.SUNSHINE
-
+    """
     def __str__(self) -> str:
         front_vehicles_string = ""
         newline = "\n"
@@ -87,6 +83,7 @@ class EnvironmentKnowledge(object):
             f"Weather: {self.weather} {newline}"
             )
         return string
+    """
 
     @staticmethod
     def __convert_to_kmh(speed):

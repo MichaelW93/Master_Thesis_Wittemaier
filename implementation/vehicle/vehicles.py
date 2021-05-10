@@ -7,6 +7,7 @@ from implementation.configuration_parameter import *
 from implementation.data_classes import EnvironmentKnowledge, SimulationState, MonitorInputData, CommunicationData
 from implementation.platoon_controller.platoon_controller import PlatoonController
 from implementation.platoon_controller.monitor.monitor import Monitor
+from implementation.util import *
 
 if TYPE_CHECKING:
     from implementation.carla_client.communication_handler import CommunicationHandler
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
 
 class Vehicle(object):
 
-    def __init__(self, carla_world, communication_handler: CommunicationHandler) -> None:
+    def __init__(self, carla_world, communication_handler: "CommunicationHandler") -> None:
         self.carla_world: carla.World = carla_world
         self.ego_vehicle: Optional[carla.Vehicle] = None
         self.imu_sensor: Optional[carla.Sensor] = None
@@ -81,8 +82,8 @@ class Vehicle(object):
 
 class EnvironmentVehicle(Vehicle):
 
-    def __init__(self, carla_world, role_name):
-        super(EnvironmentVehicle, self).__init__(carla_world)
+    def __init__(self, carla_world, role_name, comm_handler):
+        super(EnvironmentVehicle, self).__init__(carla_world, comm_handler)
         self.controller = None
         self.steering_controller: Optional[CarlaSteeringAlgorithm] = None
         self.role_name = role_name
@@ -123,14 +124,32 @@ class EnvironmentVehicle(Vehicle):
 
 class LeaderVehicle(Vehicle):
 
-    def __init__(self, carla_world):
-        super(LeaderVehicle, self).__init__(carla_world)
+    def __init__(self, carla_world, communication_handler):
+        super(LeaderVehicle, self).__init__(carla_world, communication_handler)
         self.controller = None
         self.steering_controller: Optional[CarlaSteeringAlgorithm] = None
         self.role_name = "Leader"
         self.has_front_vehicle = False
 
-    def run_step(self, manual_vehicle_control: Optional[carla.VehicleControl], simulation_state: SimulationState) -> None:
+    def run_step(self, manual_vehicle_control: Optional[carla.VehicleControl], simulation_state: SimulationState, timestamp: carla.Timestamp) -> None:
+
+        data = self.get_sensor_data()
+
+        acceleration = 0
+        if isinstance(data[0], carla.IMUMeasurement):
+            limits = (-99.9, 99.9)
+            acceleration = max(limits[0], min(limits[1], data[0].accelerometer.x))
+
+        comm_data = CommunicationData()
+        comm_data.leader_id = -1
+        comm_data.front_id = -1
+        comm_data.vehicle_id = self.ego_vehicle.id
+        comm_data.acceleration = acceleration
+        comm_data.speed = velocity_to_speed(self.ego_vehicle.get_velocity())
+        comm_data.timestamp = timestamp
+
+        self.send_communication_data(comm_data)
+
         if manual_vehicle_control is None:
             if self.steering_controller is not None and self.ego_vehicle is not None:
                 self.control = self.controller.run_step(target_speed=simulation_state.leader_target_speed)
@@ -144,11 +163,6 @@ class LeaderVehicle(Vehicle):
 
             else:
                 self.control = manual_vehicle_control
-
-        if simulation_state.leader_perform_emergency_brake:
-            self.ego_vehicle.set_light_state(carla.VehicleLightState.Brake)
-            self.control.throttle = 0.0
-            self.control.brake = 1.0
 
         self.ego_vehicle.apply_control(self.control)
         if DEBUG_MODE:
@@ -179,8 +193,8 @@ class LeaderVehicle(Vehicle):
 
 class ManagedVehicle(Vehicle):
 
-    def __init__(self, carla_world, role_name):
-        super(ManagedVehicle, self).__init__(carla_world)
+    def __init__(self, carla_world: carla.World, role_name: str, comm_handler: "CommunicationHandler"):
+        super(ManagedVehicle, self).__init__(carla_world, comm_handler)
         self.front_vehicles: List[Optional[Vehicle]] = []
         self.leader_vehicle: Optional[LeaderVehicle] = None
         self.controller = None
