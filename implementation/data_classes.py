@@ -12,6 +12,9 @@ if TYPE_CHECKING:
 
 class Plan(Enum):
     CACC_CONTROLLER = 1
+    ACC_CONTROLLER = 2
+    SPEED_CONTROLLER = 3
+    EMERGENCY_BRAKE = 4
 
 
 class FailureType(Enum):
@@ -29,6 +32,7 @@ class AdaptationTechnique(Enum):
     NONE = 1
     STRUCTURAL = 2
     PARAMETER = 3
+    CONTEXT = 4
 
 
 @dataclass()

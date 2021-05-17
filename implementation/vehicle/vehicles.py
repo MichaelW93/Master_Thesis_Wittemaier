@@ -2,7 +2,7 @@ import carla
 
 from typing import Optional, List, TYPE_CHECKING
 from implementation.vehicle.carla_steering_algorithm import CarlaSteeringAlgorithm
-from implementation.vehicle.controller import VehiclePIDController
+from implementation.vehicle.controller import SpeedController
 from implementation.configuration_parameter import *
 from implementation.data_classes import EnvironmentKnowledge, SimulationState, MonitorInputData, CommunicationData
 from implementation.platoon_controller.platoon_controller import PlatoonController
@@ -96,7 +96,7 @@ class EnvironmentVehicle(Vehicle):
             'dt': 1 / CARLA_SERVER_FPS
         }
         self.steering_controller = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.ego_vehicle)
-        self.controller = VehiclePIDController(self, args_long_dict)
+        self.controller = SpeedController(self, args_long_dict)
 
     def run_step(self, target_speed: float) -> None:
         """Main loop for the Vehicle. Handles the calculation of the vehicle control.
@@ -176,7 +176,7 @@ class LeaderVehicle(Vehicle):
             'dt': 1 / CARLA_SERVER_FPS
         }
         self.steering_controller = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.ego_vehicle)
-        self.controller = VehiclePIDController(self, args_long_dict)
+        self.controller = SpeedController(self, args_long_dict)
 
         blueprint_library = self.carla_world.get_blueprint_library()
         blueprint = blueprint_library.find("sensor.other.imu")
@@ -197,7 +197,8 @@ class ManagedVehicle(Vehicle):
         super(ManagedVehicle, self).__init__(carla_world, comm_handler)
         self.front_vehicles: List[Optional[Vehicle]] = []
         self.leader_vehicle: Optional[LeaderVehicle] = None
-        self.controller = None
+        self.distance_controller = None
+        self.speed_controller: SpeedController = None
         self.steering_controller: Optional[CarlaSteeringAlgorithm] = None
         self.obstacle_distance_sensor: Optional[carla.Sensor] = None
         self.platoon_controller: Optional[PlatoonController] = None
@@ -205,11 +206,16 @@ class ManagedVehicle(Vehicle):
         self.front_vehicle_is_leader: bool = False
         self.has_front_vehicle = False
 
+        self.target_speed: float = self.platoon_controller.knowledge.target_speed
+
     def run_step(self, timestamp: carla.Timestamp, weather: carla.WeatherParameters, speed_limit: float) -> None:
 
         environment_knowledge = self.platoon_controller.run_step(timestamp, weather, speed_limit)
 
-        self.control = self.controller.run_step(environment_knowledge, environment_knowledge.speed_limit)
+        if self.distance_controller is not None:
+            self.target_speed = self.distance_controller.run_step(environment_knowledge)
+        self.control = self.speed_controller.run_step(self.target_speed)
+
         self.control.steer = self.steering_controller.goToNextTargetLocation()
         self.ego_vehicle.apply_control(self.control)
         if DEBUG_MODE:
@@ -222,9 +228,9 @@ class ManagedVehicle(Vehicle):
             'K_I': MANAGED_VEHICLE_CONTROLLER_KI,
             'dt': 1 / CARLA_SERVER_FPS
         }
-
+        self.speed_controller = SpeedController(self, args_long_dict)
         self.steering_controller = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.ego_vehicle)
-        self.controller = VehiclePIDController(self, args_long_dict)
+
 
         blueprint_library = self.carla_world.get_blueprint_library()
         blueprint = blueprint_library.find("sensor.other.imu")
@@ -252,7 +258,7 @@ class ManagedVehicle(Vehicle):
         super(ManagedVehicle, self).destroy()
         self.front_vehicles = []
         self.leader_vehicle = []
-        self.controller = None
+        self.distance_controller = None
         self.steering_controller = None
         self.obstacle_distance_sensor = None
         self.platoon_controller.destroy()

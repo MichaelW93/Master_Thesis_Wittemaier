@@ -12,7 +12,9 @@ class Knowledge(object):
         self.front_vehicle_id: int = -1
         self.current_simulation_step: EnvironmentKnowledge = EnvironmentKnowledge()
         self.simulation_step_history: List[EnvironmentKnowledge] = initialize_list(None, 10)
-        self.other_vehicles: Dict[int, Union[OtherVehicle, PlatoonVehicle]] = {}
+        self.other_vehicles: Dict[int, OtherVehicle] = {}
+        self.current_controller: "Controller" = None
+        self.target_speed: float = 60
 
     def get_current_simulation_step(self) -> EnvironmentKnowledge:
         if self.current_simulation_step is not None:
