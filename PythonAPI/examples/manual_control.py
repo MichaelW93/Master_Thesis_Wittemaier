@@ -190,7 +190,7 @@ class World(object):
         self.constant_velocity_enabled = False
         self.current_map_layer = 0
         self.map_layer_names = [
-            carla.MapLayer.NONE,
+            carla.MapLayer.NO_ADAPTATION,
             carla.MapLayer.Buildings,
             carla.MapLayer.Decals,
             carla.MapLayer.Foliage,
@@ -329,7 +329,7 @@ class KeyboardControl(object):
         self._autopilot_enabled = start_in_autopilot
         if isinstance(world.player, carla.Vehicle):
             self._control = carla.VehicleControl()
-            self._lights = carla.VehicleLightState.NONE
+            self._lights = carla.VehicleLightState.NO_ADAPTATION
             world.player.set_autopilot(self._autopilot_enabled)
             world.player.set_light_state(self._lights)
         elif isinstance(world.player, carla.Walker):

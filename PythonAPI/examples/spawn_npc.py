@@ -172,7 +172,7 @@ def main():
             blueprint.set_attribute('role_name', 'autopilot')
 
             # prepare the light state of the cars to spawn
-            light_state = vls.NONE
+            light_state = vls.NO_ADAPTATION
             if args.car_lights_on:
                 light_state = vls.Position | vls.LowBeam | vls.LowBeam
 

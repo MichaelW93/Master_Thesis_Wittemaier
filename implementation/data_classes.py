@@ -11,10 +11,13 @@ if TYPE_CHECKING:
 
 
 class Plan(Enum):
-    CACC_CONTROLLER = 1
-    ACC_CONTROLLER = 2
-    SPEED_CONTROLLER = 3
-    EMERGENCY_BRAKE = 4
+    SWITCH_TO_CACC = 1
+    SWITCH_TO_ACC = 2
+    SWITCH_TO_SPEED = 3
+    SWITCH_TO_BRAKE = 4
+    ADAPT_TARGET_SPEED = 5
+    ADAPT_TARGET_DISTANCE = 6
+    NO_CHANGE = 7
 
 
 class FailureType(Enum):
@@ -29,7 +32,7 @@ class FailureType(Enum):
 
 
 class AdaptationTechnique(Enum):
-    NONE = 1
+    NO_ADAPTATION = 1
     STRUCTURAL = 2
     PARAMETER = 3
     CONTEXT = 4
@@ -46,6 +49,9 @@ class OtherVehicle:
     measured_distance: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    throttle: float = 0
+    brake: float = 0
+    steering: float = 0
 
 
 @dataclass()
@@ -126,67 +132,17 @@ class SimulationState(object):
         return string
 
 
-class MonitorInputData(object):
-
-    def __init__(self, timestamp: carla.Timestamp):
-        self.timestamp: carla.Timestamp = timestamp
-
-        self.connection_strength: Optional[float] = None
-        self.speed_limit: Optional[float] = None
-        self.weather: Weather = Weather(1)
-
-        self.ego_vehicle_acceleration: Optional[carla.IMUMeasurement] = None
-        self.ego_vehicle_distance: Union[carla.ObstacleDetectionEvent, float, None] = None
-        self.ego_vehicle_speed: Optional[float] = None
-        self.front_vehicle_braking_light: Optional[bool] = None
-        self.ego_vehicle_role_name: str = ""
-
-        self.front_vehicles_speed: List[Optional[float]] = []
-        self.front_vehicles_acceleration: List[Optional[float]] = []
-
-        self.leader_acceleration: Optional[float] = None
-        self.leader_speed: Optional[float] = None
-        self.leader_emergency_brake: Optional[bool] = None
-
-    def __str__(self) -> str:
-        front_vehicle_string = ""
-        for i in range(len(self.front_vehicles_speed)):
-            front_vehicle_string += f"front vehicle {i} speed: {self.__convert_to_kmh(self.front_vehicles_speed[i])} km/h\n" \
-                                    f"front vehicle {i} acceleration: {self.front_vehicles_acceleration[i]}\n"
-
-        string = f"Monitor input data:\n" \
-                 f"Vehicle name: {self.ego_vehicle_role_name}\n" \
-                 f"timestamp: {self.timestamp}\n" \
-                 f"connection_strength: {self.connection_strength}\n" \
-                 f"speed_limit: {self.speed_limit}km/h\n" \
-                 f"weather: {self.weather}\n" \
-                 f"ego vehicle speed: {self.__convert_to_kmh(self.ego_vehicle_speed)} km/h\n" \
-                 f"ego vehicle acceleration: {self.ego_vehicle_acceleration}\n" \
-                 f"ego vehicle distance: {self.ego_vehicle_distance}\n" \
-                 f"front vehicle braking light: {self.front_vehicle_braking_light}\n" \
-                 f"leader speed: {self.__convert_to_kmh(self.leader_speed)} km/h\n" \
-                 f"leader acceleration: {self.leader_acceleration}\n" \
-                 f"leader emergency brake: {self.leader_emergency_brake}\n" \
-                 f"{front_vehicle_string}\n"
-
-        return string
-
-    @staticmethod
-    def __convert_to_kmh(speed):
-        if speed is None:
-            return None
-        else:
-            return speed * 3.6
-
-
 @dataclass()
 class CommunicationData:
     vehicle_id: int = -1
     timestamp: carla.Timestamp = None
     leader_id: int = -1
     front_id: int = -1
-    speed: float = -1
-    acceleration: float = -1
+    speed: float = 0
+    acceleration: float = 0
+    steering: float = 0
+    throttle: float = 0
+    brake: float = 0
 
 
 class SystemState(object):

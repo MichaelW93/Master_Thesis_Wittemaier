@@ -1,7 +1,8 @@
 from implementation.data_classes import *
 from implementation.vehicle.vehicles import *
 from implementation.util import *
-from typing import List, Dict, Union
+from typing import List, Dict, Union, TYPE_CHECKING
+from implementation.vehicle.controller import ControllerType
 
 
 class Knowledge(object):
@@ -13,8 +14,11 @@ class Knowledge(object):
         self.current_simulation_step: EnvironmentKnowledge = EnvironmentKnowledge()
         self.simulation_step_history: List[EnvironmentKnowledge] = initialize_list(None, 10)
         self.other_vehicles: Dict[int, OtherVehicle] = {}
-        self.current_controller: "Controller" = None
+        self.current_controller: "ControllerType" = ControllerType.SPEED
         self.target_speed: float = 60
+        self.cont_max_acc: float = 0
+        self.cont_max_dec: float = 0
+        self.timegap: float = 0.5
 
     def get_current_simulation_step(self) -> EnvironmentKnowledge:
         if self.current_simulation_step is not None:

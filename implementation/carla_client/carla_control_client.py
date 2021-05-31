@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 from matplotlib import pyplot as pyp
 
 from implementation.configuration_parameter import *
-from implementation.carla_client.data_provider import DataProvider
+#from implementation.carla_client.data_provider import DataProvider
 from implementation.carla_client.user_control_window import UserControlWindow
 from implementation.carla_client.manual_control import *
 from implementation.data_classes import SimulationState
@@ -79,8 +79,8 @@ class CarlaControlClient(object):
         self.initialize_carla_client()
         self.spawn_leader()
         self.spawn_managed_vehicles()
-        self.data_provider = DataProvider(self.managed_vehicles, self.leader_vehicle,
-                                          self.carla_world, self.simulation_state)
+        #self.data_provider = DataProvider(self.managed_vehicles, self.leader_vehicle,
+        #                                  self.carla_world, self.simulation_state)
         transform = carla.Transform(
             carla.Location(SCENE_CAMERA_LOCATION_X, SCENE_CAMERA_LOCATION_Y, SCENE_CAMERA_LOCATION_Z),
             carla.Rotation(SCENE_CAMERA_ROTATION_PITCH, SCENE_CAMERA_ROTATION_YAW, SCENE_CAMERA_ROTATION_ROLL)
@@ -380,7 +380,7 @@ class CarlaControlClient(object):
 
         print("Exiting client")
 
-        self.plot_vehicle_speed()
+        # self.plot_vehicle_speed()
 
         self.reset_simulation()
 

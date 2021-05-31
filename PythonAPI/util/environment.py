@@ -30,7 +30,7 @@ WEATHER_PRESETS = {
     'rain': [100.0, 80.0, 90.0, 100.0, 20.0, 0.0, 0.9, 100.0]}
 
 CAR_LIGHTS = {
-    'None' : [carla.VehicleLightState.NONE],
+    'None' : [carla.VehicleLightState.NO_ADAPTATION],
     'Position' : [carla.VehicleLightState.Position],
     'LowBeam' : [carla.VehicleLightState.LowBeam],
     'HighBeam' : [carla.VehicleLightState.HighBeam],
@@ -45,7 +45,7 @@ CAR_LIGHTS = {
     'All' : [carla.VehicleLightState.All]}
 
 LIGHT_GROUP = {
-    'None' : [carla.LightGroup.NONE],
+    'None' : [carla.LightGroup.NO_ADAPTATION],
     # 'Vehicle' : [carla.LightGroup.Vehicle],
     'Street' : [carla.LightGroup.Street],
     'Building' : [carla.LightGroup.Building],
@@ -107,7 +107,7 @@ def apply_lights_to_cars(args, world):
     if args.cars is None:
         return
 
-    light_mask = carla.VehicleLightState.NONE
+    light_mask = carla.VehicleLightState.NO_ADAPTATION
     for option in args.cars:
         light_mask |= CAR_LIGHTS[option][0]
 

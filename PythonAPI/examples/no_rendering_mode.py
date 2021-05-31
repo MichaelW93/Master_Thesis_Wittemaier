@@ -563,7 +563,7 @@ class MapImage(object):
                     return [(carla.LaneMarkingType.Solid, lane_marking_color, marking_1),
                             (carla.LaneMarkingType.Solid, lane_marking_color, marking_2)]
 
-            return [(carla.LaneMarkingType.NONE, carla.LaneMarkingColor.Other, [])]
+            return [(carla.LaneMarkingType.NO_ADAPTATION, carla.LaneMarkingColor.Other, [])]
 
         def draw_lane(surface, lane, color):
             """Renders a single lane in a surface and with a specified color"""
@@ -591,15 +591,15 @@ class MapImage(object):
             the waypoint based on the sign parameter"""
             lane_marking = None
 
-            marking_type = carla.LaneMarkingType.NONE
-            previous_marking_type = carla.LaneMarkingType.NONE
+            marking_type = carla.LaneMarkingType.NO_ADAPTATION
+            previous_marking_type = carla.LaneMarkingType.NO_ADAPTATION
 
             marking_color = carla.LaneMarkingColor.Other
             previous_marking_color = carla.LaneMarkingColor.Other
 
             markings_list = []
             temp_waypoints = []
-            current_lane_marking = carla.LaneMarkingType.NONE
+            current_lane_marking = carla.LaneMarkingType.NO_ADAPTATION
             for sample in waypoints:
                 lane_marking = sample.left_lane_marking if sign < 0 else sample.right_lane_marking
 

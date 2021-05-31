@@ -132,7 +132,7 @@ class KeyboardControl(object):
         self.vehicle = vehicle
         if isinstance(world.vehicle, carla.Vehicle):
             self._control = carla.VehicleControl()
-            self._lights = carla.VehicleLightState.NONE
+            self._lights = carla.VehicleLightState.Brake
             world.vehicle.set_light_state(self._lights)
         else:
             raise NotImplementedError("Actor type not supported")

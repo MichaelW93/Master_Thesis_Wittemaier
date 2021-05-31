@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from implementation.data_classes import EnvironmentKnowledge, MonitorInputData
+from implementation.data_classes import EnvironmentKnowledge
 from implementation.platoon_controller.monitor.monitor import Monitor
 from implementation.platoon_controller.planner.planner import Planner
 from implementation.platoon_controller.analyzer.analyzer import Analyzer
@@ -24,9 +24,9 @@ class PlatoonController(object):
     def run_step(self, timestamp: "carla.Timestamp", weather: "carla.WeatherParameters", speed_limit: float) -> EnvironmentKnowledge:
 
         environment_knowledge = self.monitor.run_step(timestamp, weather, speed_limit)
-        adaptation = self.analyzer.run_step(environment_knowledge)
-        plan = self.planner.run_step(adaptation, environment_knowledge)
-        self.executor.run_step(plan)
+        adaptation_technique = self.analyzer.run_step(environment_knowledge)
+        plan = self.planner.run_step(adaptation_technique, environment_knowledge)
+        self.executor.run_step(plan, environment_knowledge)
 
         return environment_knowledge
 

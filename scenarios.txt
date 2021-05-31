@@ -1,29 +1,37 @@
 1. Cut In Scenario:
 	a: A random not platoon able vehicle cuts in between the leader and Follower 1
 		--> Follower 1 has to switch to the ACC Controller and create the correct distance
+			structural adaptation
 		--> Follower 2 has to change the Leader Status and preserve the distance to Follower 1
+			adaptation dependent on the deceleration values ( see scenario 4 - 6)
 	b: A random platoon able vehicle cuts in between the leader and Follower 1
 		--> The random vehicle becomes the new Follower 1 (will be named Follower 3 for easier implementation)
+			dependent on the distance value -> structural adaptation (to breaking controller) or no adaptation
 		--> The previous Follower 1 has to create the correct distance to the front vehicle
 		
 2. Communication Errors:
 	a: Certain information from the front or leading vehicle are not received
 		--> Swap to a fitting controller
 		speed, acceleration
+			structural adaptation
 		
 3. The Leading vehicles drives faster than allowed
 	a: Follower 1 has to make sure it obeys the speed limit, will become the new leader
 		--> Follower 1 swaps to the speed controller
+			context adaptation
 		--> Follower 2 has to change its leading vehicle
+			no adaptation
 		
 4. The Leading vehicles reduces its speed:
 	a: Follower 1 and 2 have to adapts the distance and reduce their own speed
+		no adaptation
 	
 5. The Leading vehicles brakes harder than set for a platoon:
 	a: Both follower have to adapt their controller to make sure they can preserve the ideal distance
+		structural adaptation
 	
 6. The Leading vehicle performs an emergency brake:
 	a: Both follower have to swap their current controller to an emergency braking controller to avoid an accident
-
+		structural adaptation
 
 	Context adaptation (5, 6)

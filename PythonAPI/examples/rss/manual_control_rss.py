@@ -328,7 +328,7 @@ class VehicleControl(object):
         self._autopilot_enabled = start_in_autopilot
         self._world = world
         self._control = carla.VehicleControl()
-        self._lights = carla.VehicleLightState.NONE
+        self._lights = carla.VehicleLightState.NO_ADAPTATION
         world.player.set_autopilot(self._autopilot_enabled)
         self._restrictor = carla.RssRestrictor()
         self._vehicle_physics = world.player.get_physics_control()

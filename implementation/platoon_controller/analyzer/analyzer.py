@@ -11,4 +11,4 @@ class Analyzer(object):
         if (analyzer_input.ego_speed[0] * 3.6) > 56:
             return AdaptationTechnique.STRUCTURAL
         else:
-            return AdaptationTechnique.NONE
+            return AdaptationTechnique.NO_ADAPTATION

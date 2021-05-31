@@ -2,7 +2,9 @@ import carla
 from collections import deque
 import numpy as np
 import math
-
+from enum import Enum
+from abc  import ABC
+from matplotlib import pyplot as pyp
 from typing import TYPE_CHECKING, Optional
 from implementation.configuration_parameter import *
 
@@ -12,45 +14,35 @@ if TYPE_CHECKING:
 
 
 class ControllerType(Enum):
-    CACC = 1
-    ACC = 2
-    SPEED = 3
-    EMERGENCY_BRAKE = 4
+    DISTANCE = 1
+    SPEED = 2
+    BRAKE = 3
 
 
-class Controller(object):
+class Controller(ABC):
 
     def __init__(self, ego_vehicle):
-        self.ego_vehicle: "Vehicle" = ego_vehicle
+        self.ego_vehicle: carla.Vehicle = ego_vehicle
         self.controller_type: ControllerType
 
-
-class CACCController(Controller):
+class DistanceController(Controller):
 
     def __init__(self, ego_vehicle):
-        super(CACCController, self).__init__(ego_vehicle)
+        super(DistanceController, self).__init__(ego_vehicle)
         self.k1: float = 1.0
         self.k2: float = 0.2
-        self.k3: float = 0.4  # proportional gain
-        self.k4: float = 0  # derivative gain
-        self.theta: float = 0  # reduce noise
+        self.k3: float = 0.4
 
-        self.MAX_ACCELERATION: float = 5
-        self.MAX_DECELERATION: float = -5
+        self.max_acceleration: float = 2.75
+        self.max_deceleration: float = -5
+        self.timegap: float = 0.5
 
-        self.controller_type: ControllerType = ControllerType.CACC
+        self.controller_type: ControllerType = ControllerType.DISTANCE
+        self.speed_controller = PIDController(self.ego_vehicle)
 
-        args_long_dict = {
-            'K_P': MANAGED_VEHICLE_CONTROLLER_KP,
-            'K_D': MANAGED_VEHICLE_CONTROLLER_KD,
-            'K_I': MANAGED_VEHICLE_CONTROLLER_KI,
-            'dt': 1 / CARLA_SERVER_FPS
-        }
-        self.speed_controller = SpeedController(self.ego_vehicle, args_long_dict)
-
-    def run_step(self, environment_knowledge: "EnvironmentKnowledge" = None):
+    def run_step(self, environment_knowledge: "EnvironmentKnowledge"):
         target_speed = self.__calculate_throttle_value(environment_knowledge)
-        return target_speed
+        return self.speed_controller.run_step(target_speed)
 
     def __calculate_throttle_value(self, environment_knowledge: "EnvironmentKnowledge"):
 
@@ -63,96 +55,53 @@ class CACCController(Controller):
 
         speed_ego = environment_knowledge.ego_speed[0]
         distance = environment_knowledge.ego_distance[0]
-        headway = 0.5
-        r = 2  # distance at standstill
+        r = self.__get_min_distance(speed_ego)  # distance at standstill
         timestep = environment_knowledge.time_to_last_step
 
-        des_distance = r + headway*speed_ego
-
-        #print("\n", self.ego_vehicle.role_name, "\n")
-        #print("Desired distance: ", des_distance)
-        #print("Actual distance: ", distance)
-
+        des_distance = r + self.timegap * speed_ego
         error = distance - des_distance
+        # acc = 0
 
         acc_ego = self.k3 * min(acc) + self.k2 * (speed_front - speed_ego) + self.k1 * error
         if acc_ego > 0:
-            acc_ego = max(self.MAX_ACCELERATION, acc_ego)
+            acc_ego = max(self.max_acceleration, acc_ego)
         else:
-            acc_ego = min(self.MAX_DECELERATION, acc_ego)
-        #print("Target accel ", acc_ego)
-        #print("Ego speed: ", speed_ego * 3.6)
+            acc_ego = min(self.max_deceleration, acc_ego)
         if acc_ego > 0:
             ego_target_speed = ((0.5 * acc_ego * timestep * timestep + speed_ego) * 3.6) + 0.6
         else:
             ego_target_speed = ((0.5 * acc_ego * timestep * timestep + speed_ego) * 3.6)
-        #print("Target speed: ", ego_target_speed)
-        #print(control)
         return ego_target_speed
 
-
-class ACCController(Controller):
-
-    def __init__(self, ego_vehicle):
-        super(ACCController, self).__init__(ego_vehicle)
-
-        self.k3: float = 1
-        self.k2: float = 0.2
-        self.k1: float = 0.4
-
-        self.MAX_ACCELERATION: float = 5
-        self.MAX_DECELERATION: float = -5
-
-        args_long_dict = {
-            'K_P': MANAGED_VEHICLE_CONTROLLER_KP,
-            'K_D': MANAGED_VEHICLE_CONTROLLER_KD,
-            'K_I': MANAGED_VEHICLE_CONTROLLER_KI,
-            'dt': 1 / CARLA_SERVER_FPS
-        }
-        self.speed_controller = SpeedController(ego_vehicle, args_long_dict)
-
-    def run_step(self, env_knowledge: "EnvironmentKnowledge" = None) -> carla.VehicleControl:
-        target_speed = self.__calculate_target_speed(env_knowledge)
-
-        return target_speed
-
-    def __calculate_target_speed(self, env_knowledge: "EnvironmentKnowledge") -> float:
-
-        speed_front = env_knowledge.other_vehicles[env_knowledge.front_vehicle_id].measured_speed[0]
-        acc_front = env_knowledge.other_vehicles[env_knowledge.front_vehicle_id].measured_acceleration[0]
-
-        speed_ego = env_knowledge.ego_speed[0]
-        distance = env_knowledge.ego_distance[0]
-        headway = 1
-        r = 2  # distance at standstill
-        timestep = env_knowledge.time_to_last_step
-
-        des_distance = r + headway * speed_ego
-        error = distance - des_distance
-
-        acc_ego = self.k3 * acc_front + self.k2 * (speed_front - speed_ego) + self.k1 * error
-        if acc_ego > 0:
-            acc_ego = max(self.MAX_ACCELERATION, acc_ego)
+    @staticmethod
+    def __get_min_distance(ego_speed) -> float:
+        if 0 < ego_speed < 5:
+            return 2
+        elif 5 < ego_speed < 9:
+            d = 2 - 0.5 * (ego_speed - 5)
+            return d
         else:
-            acc_ego = min(self.MAX_DECELERATION, acc_ego)
-        # print("Target accel ", acc_ego)
-        # print("Ego speed: ", speed_ego * 3.6)
-        if acc_ego > 0:
-            ego_target_speed = ((0.5 * acc_ego * timestep * timestep + speed_ego) * 3.6) + 0.6
-        else:
-            ego_target_speed = ((0.5 * acc_ego * timestep * timestep + speed_ego) * 3.6)
-
-        return ego_target_speed
-
+            return 0
 
 class SpeedController(Controller):
+
+    def __init__(self, ego_vehicle):
+
+        self.pid_controller = PIDController(ego_vehicle)
+
+    def run_step(self, environment_knowledge: "EnvironmentKnowledge"):
+
+        return self.pid_controller.run_step(target_speed= environment_knowledge.speed_limit)
+
+
+class PIDController(object):
     """
     VehiclePIDController is the combination of two PID controllers
     (lateral and longitudinal) to perform the
     low level control a vehicle from client side
     """
 
-    def __init__(self, ego_vehicle, args_longitudinal, max_throttle=0.75, max_brake=0.3):
+    def __init__(self, ego_vehicle, max_throttle=0.75, max_brake=0.3):
         """
         Constructor method.
 
@@ -164,12 +113,19 @@ class SpeedController(Controller):
             K_I -- Integral term
         """
 
-        super(SpeedController, self).__init__(ego_vehicle)
+        args_longitudinal = {
+            'K_P': MANAGED_VEHICLE_CONTROLLER_KP,
+            'K_D': MANAGED_VEHICLE_CONTROLLER_KD,
+            'K_I': MANAGED_VEHICLE_CONTROLLER_KI,
+            'dt': 1 / CARLA_SERVER_FPS
+        }
+
+        self.ego_vehicle = ego_vehicle
         self.max_brake = max_brake
         self.max_throttle = max_throttle
         self.controller_type: ControllerType = ControllerType.SPEED
 
-        self._lon_controller = PIDLongitudinalController(self.ego_vehicle.ego_vehicle, **args_longitudinal)
+        self._lon_controller = PIDLongitudinalController(self.ego_vehicle, **args_longitudinal)
 
     def run_step(self, target_speed: Optional[float] = None) -> carla.VehicleControl:
 
@@ -245,6 +201,44 @@ class PIDLongitudinalController(object):
             _ie = 0.0
 
         return np.clip((self._k_p * error) + (self._k_d * _de) + (self._k_i * _ie), -1.0, 1.0)
+
+
+class BrakeController(Controller):
+
+    def __init__(self, ego_vehicle):
+        super(BrakeController, self).__init__(ego_vehicle)
+
+    def run_step(self, env_knowledge: "EnvironmentKnowledge"):
+
+        max_deceleration = 0
+        max_brake = 0
+
+        for vehicle in env_knowledge.other_vehicles.values():
+            if vehicle.measured_acceleration[1] == FailureType.no_failure:
+                if vehicle.acceleration[1] == FailureType.no_failure:
+                    vehicle_dec = min(vehicle.measured_acceleration[0], vehicle.acceleration[0])
+                else:
+                    vehicle_dec = vehicle.measured_acceleration[0]
+            else:
+                if vehicle.acceleration[1] == FailureType.no_failure:
+                    vehicle_dec = vehicle.acceleration[0]
+                else:
+                    vehicle_dec = 0
+            if vehicle.brake > max_brake:
+                max_brake = vehicle.brake
+            if vehicle_dec < max_deceleration:
+                max_deceleration = vehicle_dec
+
+        control = carla.VehicleControl()
+        if max_brake > 0.9:
+            control.brake = 1
+            return control
+        else:
+            control.brake = max_brake
+            return control
+
+        target_speed = 0.5 * max_deceleration * env_knowledge.time_to_last_step**2 + env_knowledge.ego_speed[0]
+
 
 
 def get_speed(vehicle):
