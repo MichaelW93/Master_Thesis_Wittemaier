@@ -44,11 +44,10 @@ class OtherVehicle:
     platoonable: bool = False
     is_leader: bool = False
     is_front_vehicle: bool = False
-    measured_speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-    measured_acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-    measured_distance: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-    speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-    acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    measured_speed_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    measured_acceleration_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    speed_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    acceleration_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     throttle: float = 0
     brake: float = 0
     steering: float = 0
@@ -60,10 +59,22 @@ class EnvironmentKnowledge(object):
     timestamp.elapsed_seconds = 0.0
     time_to_last_step: float = 0.05
     communication_delay: Optional[float] = 0
-    ego_acceleration: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-    ego_distance: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-    ego_speed: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    ego_acceleration_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    ego_distance_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    ego_speed_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     ego_name: str = ""
+
+    speed_diff_to_front: float = 0
+    speed_diff_to_leader: float = 0
+    speed_over_limit: float = 0
+
+    max_acc: float = 0
+    max_dec: float = 0
+    max_throttle: float = 0
+    max_brake: float = 0
+
+    desired_distance: float = 0
+    distance_error: float = 0
 
     leader_id: int = -1
     front_vehicle_id: int = -1
@@ -103,33 +114,37 @@ class EnvironmentKnowledge(object):
             return speed * 3.6
 
 
+@dataclass()
 class SimulationState(object):
 
-    def __init__(self):
-        self.vehicles_speed_available: Dict[int, bool] = {}
-        self.vehicles_acceleration_available: Dict[int, bool] = {}
-        self.followers_distance_available: Dict[int, bool] = {}
+    vehicles_speed_available: Dict[int, bool] = field(default_factory=dict)
+    vehicles_acceleration_available: Dict[int, bool] = field(default_factory=dict)
+    followers_distance_available: Dict[int, bool] = field(default_factory=dict)
 
-        self.leader_target_speed: float = 60.0
-        self.environment_vehicles_target_speed: float = 60
+    leader_target_speed: float = 60.0
+    environment_vehicles_target_speed: float = 60
 
-        self.speed_limit: float = 60.0
-        self.connection_strength: float = 100.0
-        self.weather: Weather = Weather(1)
+    speed_limit: float = 60.0
+    connection_strength: float = 100.0
+    weather: Weather = Weather(1)
 
-    def __str__(self) -> str:
-        newline = '\n'
-        managed_vehicles_string = ""
-        i = 0
-        string = f"Current simulation state:{newline} " \
-                 f"{self.vehicles_speed_available} {newline}" \
-                 f"{self.vehicles_acceleration_available} {newline}" \
-                 f"{self.followers_distance_available} {newline}" \
-                 f"leader target speed: {self.leader_target_speed} {newline}" \
-                 f"speed limit: {self.speed_limit} {newline}" \
-                 f"connection_strength: {self.connection_strength} {newline}" \
-                 f"weather: {self.weather} {newline}"
-        return string
+    record_data: bool = False
+
+    k1: float = 1
+    k2: float = 0.2
+    k3: float = 0.4
+
+    classify: bool = False
+    no_adap: bool = False
+    par_adap: bool = False
+    struc_adap: bool = False
+    com_adap: bool = False
+
+    emergency_brake: bool = False
+    medium_brake: bool = False
+    soft_brake: bool = False
+
+    controller_follower_1: str = "CACC"
 
 
 @dataclass()

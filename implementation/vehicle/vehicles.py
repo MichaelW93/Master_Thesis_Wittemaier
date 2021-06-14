@@ -1,4 +1,5 @@
 import carla
+import random
 
 from typing import Optional, List, TYPE_CHECKING, Union
 from implementation.vehicle.carla_steering_algorithm import CarlaSteeringAlgorithm
@@ -68,6 +69,11 @@ class Vehicle(object):
     def send_communication_data(self, comm_data: CommunicationData):
         self.comm_handler.set_vehicle_data(comm_data)
 
+    def get_speed(self):
+        velocity = self.get_velocity()
+        speed = math.sqrt(velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2)
+        return speed
+
     def destroy(self):
         for sensor in self.sensors:
             if sensor is not None and sensor.is_alive:
@@ -131,10 +137,19 @@ class LeaderVehicle(Vehicle):
         self.steering_controller: Optional[CarlaSteeringAlgorithm] = None
         self.role_name = "Leader"
         self.has_front_vehicle = False
+        self.perform_emergency_brake = False
+        self.perform_soft_brake = False
+        self.perform_medium_brake = False
+        self.target_speed = -1
 
     def run_step(self, manual_vehicle_control: Optional[carla.VehicleControl], simulation_state: SimulationState, timestamp: carla.Timestamp) -> None:
 
         data = self.get_sensor_data()
+
+        if self.target_speed == -1:
+            target_speed = simulation_state.leader_target_speed
+        else:
+            target_speed = self.target_speed
 
         acceleration = 0
         if isinstance(data[0], carla.IMUMeasurement):
@@ -143,7 +158,7 @@ class LeaderVehicle(Vehicle):
 
         if manual_vehicle_control is None:
             if self.steering_controller is not None and self.ego_vehicle is not None:
-                self.control = self.controller.run_step(target_speed=simulation_state.leader_target_speed)
+                self.control = self.controller.run_step(target_speed)
                 self.control.steer = self.steering_controller.goToNextTargetLocation()
         else:
             if manual_vehicle_control.steer == 0:
@@ -154,6 +169,20 @@ class LeaderVehicle(Vehicle):
 
             else:
                 self.control = manual_vehicle_control
+
+        self.perform_emergency_brake = simulation_state.emergency_brake
+        self.perform_medium_brake = simulation_state.medium_brake
+        self.perform_soft_brake = simulation_state.soft_brake
+
+        if self.perform_emergency_brake:
+            self.control.brake = 1.0
+            self.control.throttle = 0
+        if self.perform_medium_brake:
+            self.control.brake = random.uniform(0.4, 0.6)
+            self.control.throttle = 0
+        if self.perform_soft_brake:
+            self.control.brake = random.uniform(0.1, 0.2)
+            self.control.throttle = 0
 
         comm_data = CommunicationData()
         comm_data.leader_id = -1
@@ -203,12 +232,12 @@ class ManagedVehicle(Vehicle):
         self.front_vehicle_is_leader: bool = False
         self.has_front_vehicle = False
         self.target_speed = 0
-        self.data_collector = None
+        self.data_collector: DataCollector = None
 
-    def run_step(self, timestamp: carla.Timestamp, weather: carla.WeatherParameters, speed_limit: float) -> None:
+    def run_step(self, timestamp: carla.Timestamp, weather: carla.WeatherParameters, speed_limit: float, sim_state: "SimulationState") -> None:
 
         environment_knowledge = self.platoon_controller.run_step(timestamp, weather, speed_limit)
-        self.data_collector.run_step(environment_knowledge)
+        self.data_collector.run_step(environment_knowledge, sim_state)
 
         self.control = self.controller.run_step(environment_knowledge)
 
@@ -219,8 +248,8 @@ class ManagedVehicle(Vehicle):
         comm_data.leader_id = environment_knowledge.leader_id
         comm_data.front_id = environment_knowledge.front_vehicle_id
         comm_data.vehicle_id = self.ego_vehicle.id
-        comm_data.acceleration = environment_knowledge.ego_acceleration[0]
-        comm_data.speed = environment_knowledge.ego_speed[0]
+        comm_data.acceleration = environment_knowledge.ego_acceleration_tuple[0]
+        comm_data.speed = environment_knowledge.ego_speed_tuple[0]
         comm_data.timestamp = timestamp
         comm_data.throttle = self.control.throttle
         comm_data.brake = self.control.brake
@@ -246,7 +275,7 @@ class ManagedVehicle(Vehicle):
         blueprint = blueprint_library.find("sensor.other.obstacle")
         blueprint.set_attribute("distance", str(50))
         blueprint.set_attribute("only_dynamics", str(True))
-        blueprint.set_attribute("hit_radius", str(2))
+        blueprint.set_attribute("hit_radius", str(5))
         if DEBUG_MODE:
             blueprint.set_attribute("debug_linetrace", str(True))
 
@@ -266,7 +295,6 @@ class ManagedVehicle(Vehicle):
         self.data_collector.terminate()
         self.front_vehicles = []
         self.leader_vehicle = []
-        self.distance_controller = None
         self.steering_controller = None
         self.obstacle_distance_sensor = None
         self.platoon_controller.destroy()

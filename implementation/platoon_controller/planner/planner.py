@@ -14,10 +14,10 @@ class Planner(object):
     def run_step(self, adaptation_technique: AdaptationTechnique, environment_knowledge: "EnvironmentKnowledge"):
 
         if adaptation_technique == AdaptationTechnique.STRUCTURAL:
-            self.process_structural_adaptation(environment_knowledge)
-            return Plan.SWITCH_TO_CACC
+            plan = self.process_structural_adaptation(environment_knowledge)
+            return plan
         elif adaptation_technique == AdaptationTechnique.PARAMETER:
-            return self.process_parameter_adaptation()
+            return self.process_parameter_adaptation(environment_knowledge)
         elif adaptation_technique == AdaptationTechnique.CONTEXT:
             return self.process_context_adaptation(environment_knowledge)
         else:
@@ -36,6 +36,8 @@ class Planner(object):
             return Plan.ADAPT_TARGET_DISTANCE
         elif self.knowledge.current_controller == ControllerType.BRAKE:
             return Plan.SWITCH_TO_BRAKE
+        else:
+            return Plan.SWITCH_TO_CACC
 
     def process_context_adaptation(self, env_knowledge: "EnvironmentKnowledge"):
         if self.knowledge.current_controller == ControllerType.DISTANCE:
@@ -43,40 +45,42 @@ class Planner(object):
         elif self.knowledge.current_controller == ControllerType.DISTANCE:
             return Plan.SWITCH_TO_SPEED
         elif self.knowledge.current_controller == ControllerType.SPEED:
-            if env_knowledge.other_vehicles[self.knowledge.leader_id].speed[1] == FailureType.omission or \
-               env_knowledge.other_vehicles[self.knowledge.leader_id].acceleration[1] == FailureType.omission or \
-               env_knowledge.other_vehicles[self.knowledge.front_vehicle_id].speed[1] == FailureType.omission or \
-               env_knowledge.other_vehicles[self.knowledge.front_vehicle_id].acceleration[1] == FailureType.omission:
+            if env_knowledge.other_vehicles[self.knowledge.leader_id].speed_tuple[1] == FailureType.omission or \
+               env_knowledge.other_vehicles[self.knowledge.leader_id].acceleration_tuple[1] == FailureType.omission or \
+               env_knowledge.other_vehicles[self.knowledge.front_vehicle_id].speed_tuple[1] == FailureType.omission or \
+               env_knowledge.other_vehicles[self.knowledge.front_vehicle_id].acceleration_tuple[1] == FailureType.omission:
                 return Plan.SWITCH_TO_ACC
             else:
                 return Plan.SWITCH_TO_CACC
         elif self.knowledge.current_controller == ControllerType.BRAKE:
-            if env_knowledge.other_vehicles[self.knowledge.leader_id].speed[1] == FailureType.omission or \
-               env_knowledge.other_vehicles[self.knowledge.leader_id].acceleration[1] == FailureType.omission or \
-               env_knowledge.other_vehicles[self.knowledge.front_vehicle_id].speed[1] == FailureType.omission or \
-               env_knowledge.other_vehicles[self.knowledge.front_vehicle_id].acceleration[1] == FailureType.omission:
+            if env_knowledge.other_vehicles[self.knowledge.leader_id].speed_tuple[1] == FailureType.omission or \
+               env_knowledge.other_vehicles[self.knowledge.leader_id].acceleration_tuple[1] == FailureType.omission or \
+               env_knowledge.other_vehicles[self.knowledge.front_vehicle_id].speed_tuple[1] == FailureType.omission or \
+               env_knowledge.other_vehicles[self.knowledge.front_vehicle_id].acceleration_tuple[1] == FailureType.omission:
                 return Plan.SWITCH_TO_ACC
             else:
                 return Plan.SWITCH_TO_CACC
+        else:
+            return Plan.SWITCH_TO_CACC
 
     def process_structural_adaptation(self, env_knowledge: "EnvironmentKnowledge"):
+
+        controller = self.knowledge.current_controller
         if self.knowledge.leader_id in env_knowledge.other_vehicles:
-            if self.knowledge.current_controller == ControllerType.DISTANCE:
-                if env_knowledge.other_vehicles[self.knowledge.leader_id].acceleration[0] <= -8:
-                    # Leader performs emergency brake
-                    return Plan.SWITCH_TO_BRAKE
-            elif self.knowledge.current_controller == ControllerType.DISTANCE:
-                if env_knowledge.other_vehicles[self.knowledge.leader_id].acceleration[0] <= -8:
-                    # Leader performs emergency brake
-                    return Plan.SWITCH_TO_BRAKE
-            elif self.knowledge.current_controller == ControllerType.SPEED:
-                if env_knowledge.other_vehicles[self.knowledge.leader_id].acceleration[0] <= -8:
-                    # Leader performs emergency brake
-                    return Plan.SWITCH_TO_BRAKE
-            elif self.knowledge.current_controller == ControllerType.BRAKE:
-                if env_knowledge.other_vehicles[self.knowledge.leader_id].acceleration[0] >= -8:
-                    # Leader performs emergency brake
+            leader = env_knowledge.other_vehicles[self.knowledge.leader_id]
+            if controller == ControllerType.DISTANCE:
+                if (env_knowledge.ego_speed_tuple[0] * 3.6) > env_knowledge.speed_limit:
                     return Plan.SWITCH_TO_SPEED
+                if leader.brake > 0.1:
+                    return Plan.SWITCH_TO_BRAKE
+
+            elif controller == ControllerType.SPEED:
+                if leader.brake > 0.1:
+                    return Plan.SWITCH_TO_BRAKE
+                else:
+                    return Plan.SWITCH_TO_CACC
+            else:
+                return Plan.NO_CHANGE
         else:
-            return
+            return Plan.SWITCH_TO_SPEED
 

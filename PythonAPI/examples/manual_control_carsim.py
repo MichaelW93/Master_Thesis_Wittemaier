@@ -536,17 +536,17 @@ class KeyboardControl(object):
         self._control.hand_brake = keys[K_SPACE]
 
     def _parse_walker_keys(self, keys, milliseconds, world):
-        self._control.speed = 0.0
+        self._control.speed_tuple = 0.0
         if keys[K_DOWN] or keys[K_s]:
-            self._control.speed = 0.0
+            self._control.speed_tuple = 0.0
         if keys[K_LEFT] or keys[K_a]:
-            self._control.speed = .01
+            self._control.speed_tuple = .01
             self._rotation.yaw -= 0.08 * milliseconds
         if keys[K_RIGHT] or keys[K_d]:
-            self._control.speed = .01
+            self._control.speed_tuple = .01
             self._rotation.yaw += 0.08 * milliseconds
         if keys[K_UP] or keys[K_w]:
-            self._control.speed = world.player_max_speed_fast if pygame.key.get_mods() & KMOD_SHIFT else world.player_max_speed
+            self._control.speed_tuple = world.player_max_speed_fast if pygame.key.get_mods() & KMOD_SHIFT else world.player_max_speed
         self._control.jump = keys[K_SPACE]
         self._rotation.yaw = round(self._rotation.yaw, 1)
         self._control.direction = self._rotation.get_forward_vector()
@@ -630,7 +630,7 @@ class HUD(object):
                 'Gear:        %s' % {-1: 'R', 0: 'N'}.get(c.gear, c.gear)]
         elif isinstance(c, carla.WalkerControl):
             self._info_text += [
-                ('Speed:', c.speed, 0.0, 5.556),
+                ('Speed:', c.speed_tuple, 0.0, 5.556),
                 ('Jump:', c.jump)]
         self._info_text += [
             '',

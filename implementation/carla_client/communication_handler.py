@@ -8,6 +8,12 @@ from implementation.vehicle.vehicles import ManagedVehicle, LeaderVehicle, Envir
 class CommunicationHandler(object):
 
     def __init__(self):
+        self.vehicles_data: List[Dict[int, CommunicationData]] = None
+        self.delay_in_simulation_ticks = 1
+        self.sim_state: SimulationState = SimulationState()
+        self.vehicles: Dict[int, Union[ManagedVehicle, LeaderVehicle, EnvironmentVehicle]] = None
+
+    def setup(self):
         self.vehicles_data: List[Dict[int, CommunicationData]] = initialize_list({}, 10)
         self.delay_in_simulation_ticks = 1
         self.sim_state: SimulationState = SimulationState()
@@ -16,7 +22,11 @@ class CommunicationHandler(object):
     def run_step(self, sim_state: SimulationState):
         # received data is updated in the next simulation step --> always 1 tick delay
         self.sim_state = sim_state
-        self.delay_in_simulation_ticks = self.calculate_delay_in_simulation_tick(self.sim_state.connection_strength) - 1
+        delay = self.calculate_delay_in_simulation_tick(self.sim_state.connection_strength)
+        if delay is None:
+            self.delay_in_simulation_ticks = None
+        else:
+            self.delay_in_simulation_ticks = delay - 1
         self.update_vehicle_data()
 
     def update_vehicle_data(self):
@@ -30,17 +40,29 @@ class CommunicationHandler(object):
         data_dict = self.vehicles_data[0]
         data_dict[data.vehicle_id] = data
 
-    def get_vehicle_data(self, vehicle_id) -> CommunicationData:
-        data_dict = self.vehicles_data[self.delay_in_simulation_ticks]
-        data = data_dict[vehicle_id]
-        if not self.sim_state.vehicles_speed_available[vehicle_id]:
+    def get_vehicle_data(self, vehicle_id) -> Optional[CommunicationData]:
+        if self.delay_in_simulation_ticks is None:
+            data_dict = self.vehicles_data[1]
+            data = data_dict[vehicle_id]
             data.speed = None
-        elif not self.sim_state.vehicles_acceleration_available[vehicle_id]:
             data.acceleration = None
+        else:
+            data_dict = self.vehicles_data[self.delay_in_simulation_ticks]
+            if vehicle_id in data_dict:
+                data = data_dict[vehicle_id]
+                if not self.sim_state.vehicles_speed_available[vehicle_id]:
+                    data.speed = None
+                elif not self.sim_state.vehicles_acceleration_available[vehicle_id]:
+                    data.acceleration = None
+            else:
+                return
         return data
 
     def get_all_vehicle_data(self) -> Dict[int, CommunicationData]:
-        return self.vehicles_data[self.delay_in_simulation_ticks]
+        vehicle_comm_data: Dict[int, CommunicationData] = {}
+        for vehicle in self.vehicles.values():
+            vehicle_comm_data[vehicle.ego_vehicle.id] = self.get_vehicle_data(vehicle.ego_vehicle.id)
+        return vehicle_comm_data
 
     def calculate_delay_in_simulation_tick(self, connection_strength) -> Optional[int]:
         if connection_strength == 100:
@@ -56,3 +78,7 @@ class CommunicationHandler(object):
             return None
         delay_in_simulation_ticks = delay/((1/CARLA_SERVER_FPS)*1000)  # convert to ms
         return int(round(delay_in_simulation_ticks))
+
+    def reset(self):
+        self.vehicles_data = []
+        self.vehicles = {}

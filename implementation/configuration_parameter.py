@@ -1,4 +1,6 @@
 """ This file contains all configuration parameter for the simulation"""
+"""Simulation parameter"""
+MANUAL_SCENARIO_MODE: bool = True
 
 """Carla Parameter"""
 CARLA_SERVER_PORT: int = 2000
@@ -57,7 +59,7 @@ MOVE_SPECTATOR: bool = True
 
 """Safety Parameter"""
 SPEED_THRESHOLD_FACTOR: float = 0.01 # [s]
-MAX_ACCELERATION: float = 3.0 # [m/s²]
-MAX_DECELERATION: float = -8.0 #[m/s²]
+MAX_ACCELERATION: float = 8.0 # [m/s²]
+MAX_DECELERATION: float = -14.0 #[m/s²]
 DELAY_THRESHOLD: float = 5.0 #[ms]
 DISTANCE_THRESHOLD_FACTOR: float = 1.0 #[m]

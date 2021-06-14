@@ -292,7 +292,7 @@ class HUD(object):
                 'Gear:        %s' % {-1: 'R', 0: 'N'}.get(control.gear, control.gear)]
         elif isinstance(control, carla.WalkerControl):
             self._info_text += [
-                ('Speed:', control.speed, 0.0, 5.556),
+                ('Speed:', control.speed_tuple, 0.0, 5.556),
                 ('Jump:', control.jump)]
         self._info_text += [
             '',

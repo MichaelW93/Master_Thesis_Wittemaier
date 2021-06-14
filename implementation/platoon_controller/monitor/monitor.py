@@ -1,10 +1,12 @@
 import carla
 import math
-
+import statistics
 from typing import Optional, Tuple, TYPE_CHECKING, Union, List, Dict
 
 from implementation.platoon_controller.knowledge.base_attribute import *
 from implementation.data_classes import *
+
+import random
 
 if TYPE_CHECKING:
     from implementation.vehicle.vehicles import ManagedVehicle
@@ -55,56 +57,56 @@ class Monitor(object):
 
     def check_platoon(self, data: Union[carla.ObstacleDetectionEvent, int]):
         """Returns the Id of the current front vehicle, if one exists"""
+        other_vehicles = {}
         if data == -1:
             # No front vehicle detected
             self.knowledge.front_vehicle_id = -1
             self.knowledge.leader_id = -1
-            self.knowledge.other_vehicles = {}
+            self.knowledge.other_vehicles = other_vehicles
+            return
         else:
+            # Create front vehicle
             front_id = data.other_actor.id
             self.knowledge.leader_id = front_id
             self.knowledge.front_vehicle_id = front_id
-            if front_id in self.knowledge.other_vehicles:
-                self.knowledge.other_vehicles[front_id].is_front_vehicle = True
-                self.knowledge.other_vehicles[front_id].is_leader = True
-            else:
-                vehicle = OtherVehicle(is_front_vehicle=True, is_leader=True, id=front_id)
-                self.knowledge.other_vehicles[front_id] = vehicle
+            vehicle = OtherVehicle(is_front_vehicle=True, is_leader=True, id=front_id)
+            other_vehicles[front_id] = vehicle
 
         front_id = self.knowledge.front_vehicle_id
         while front_id != -1:
             if front_id in self.communication_data:
                 # Platoonable vehicle
                 front_data: CommunicationData = self.communication_data[front_id]
-                if front_id in self.knowledge.other_vehicles:
-                    self.knowledge.other_vehicles[front_id].platoonable = True
+                if front_id in other_vehicles:
+                    other_vehicles[front_id].platoonable = True
                 if front_data.front_id == -1:
                     # Vehicle has no front_vehicle --> is Leading vehicle
-                    if front_id in self.knowledge.other_vehicles:
+                    if front_id in other_vehicles:
                         # Vehicle is already known
                         self.knowledge.leader_id = front_id
-                        self.knowledge.other_vehicles[front_id].is_leader = True
+                        other_vehicles[front_id].is_leader = True
                         front_id = -1
                     else:
                         # Vehicle is not known --> create a new one
                         vehicle = OtherVehicle(id=front_id, platoonable=True, is_leader=True)
-                        self.knowledge.other_vehicles[front_id] = vehicle
+                        other_vehicles[front_id] = vehicle
                 else:
                     # go to the next vehicle
-                    if front_id in self.knowledge.other_vehicles:
-                        self.knowledge.other_vehicles[front_id].is_leader = False
+                    if front_id in other_vehicles:
+                        other_vehicles[front_id].is_leader = False
                     front_id = front_data.front_id
             else:
                 # Vehicle is not platoonable
-                if front_id in self.knowledge.other_vehicles:
+                if front_id in other_vehicles:
                     # Vehicle is already known --> just update its information
                     self.knowledge.leader_id = front_id
-                    self.knowledge.other_vehicles[front_id].is_leader = True
+                    other_vehicles[front_id].is_leader = True
                 else:
                     # vehicle is not known --> create a new one
                     vehicle = OtherVehicle(id=front_id, platoonable=False, is_leader=True)
-                    self.knowledge.other_vehicles[front_id] = vehicle
+                    other_vehicles[front_id] = vehicle
                 front_id = -1
+        self.knowledge.other_vehicles = other_vehicles
 
     def check_communication_data(self, comm_data: "CommunicationData", previous_timestamp):
         acc_data = self.__check_acceleration_for_failures
@@ -147,14 +149,14 @@ class Monitor(object):
         environment_knowledge.time_to_last_step = timestamp.elapsed_seconds - \
                                                   previous_environment_knowledge.timestamp.elapsed_seconds
 
-        environment_knowledge.ego_speed = self.__check_speed_for_failures(
+        environment_knowledge.ego_speed_tuple = self.__check_speed_for_failures(
             ego_speed,
-            previous_environment_knowledge.ego_speed,
-            previous_environment_knowledge.ego_acceleration,
+            previous_environment_knowledge.ego_speed_tuple,
+            previous_environment_knowledge.ego_acceleration_tuple,
             previous_environment_knowledge.timestamp,
             timestamp)
 
-        environment_knowledge.ego_acceleration = self.__check_acceleration_for_failures(
+        environment_knowledge.ego_acceleration_tuple = self.__check_acceleration_for_failures(
             self.__process_acceleration(ego_acc),
             timestamp,
             previous_environment_knowledge.timestamp)
@@ -168,45 +170,133 @@ class Monitor(object):
 
                 environment_knowledge.other_vehicles[vehicle.id] = vehicle
 
-                if self.knowledge.front_vehicle_id in previous_environment_knowledge.other_vehicles:
-                    vehicle_speed = self.__check_speed_for_failures(
-                        vehicle_comm_data.speed,
-                        previous_environment_knowledge.other_vehicles[vehicle.id].speed,
-                        previous_environment_knowledge.other_vehicles[vehicle.id].acceleration,
-                        previous_environment_knowledge.timestamp,
-                        timestamp)
-                    environment_knowledge.other_vehicles[vehicle.id].speed = vehicle_speed
-                environment_knowledge.other_vehicles[vehicle.id].acceleration = vehicle_acc
+                if vehicle.id in previous_environment_knowledge.other_vehicles:
+                    speed_tuple = previous_environment_knowledge.other_vehicles[vehicle.id].speed_tuple
+                    acc_tuple = previous_environment_knowledge.other_vehicles[vehicle.id].acceleration_tuple
+                else:
+                    speed_tuple = (None, FailureType.no_failure)
+                    acc_tuple = (None, FailureType.no_failure)
+
+                vehicle_speed = self.__check_speed_for_failures(
+                    vehicle_comm_data.speed,
+                    speed_tuple,
+                    acc_tuple,
+                    previous_environment_knowledge.timestamp,
+                    timestamp)
+
+                environment_knowledge.other_vehicles[vehicle.id].speed_tuple = vehicle_speed
+                environment_knowledge.other_vehicles[vehicle.id].acceleration_tuple = vehicle_acc
                 environment_knowledge.other_vehicles[vehicle.id].steering = self.communication_data[vehicle.id].steering
                 environment_knowledge.other_vehicles[vehicle.id].brake = self.communication_data[vehicle.id].brake
                 environment_knowledge.other_vehicles[vehicle.id].throttle = self.communication_data[vehicle.id].throttle
 
         if self.knowledge.front_vehicle_id in previous_environment_knowledge.other_vehicles:
-            environment_knowledge.ego_distance = self.__check_distance_for_failure(
+            front_vehicle = environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id]
+            previous_front_vehicle = previous_environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id]
+
+            print("Previous speed1: ", previous_front_vehicle.measured_speed_tuple)
+            environment_knowledge.ego_distance_tuple = self.__check_distance_for_failure(
                 ego_distance,
-                previous_environment_knowledge.ego_speed,
-                previous_environment_knowledge.ego_acceleration,
-                previous_environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].acceleration,
-                previous_environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].speed,
-                previous_environment_knowledge.ego_distance,
+                previous_environment_knowledge.ego_speed_tuple,
+                previous_environment_knowledge.ego_acceleration_tuple,
+                previous_front_vehicle.acceleration_tuple,
+                previous_front_vehicle.speed_tuple,
+                previous_environment_knowledge.ego_distance_tuple,
                 timestamp,
                 previous_environment_knowledge.timestamp)
-            environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].measured_speed = \
-                self.__process_measured_speed(environment_knowledge.ego_speed[0],
-                                              environment_knowledge.ego_distance,
-                                              previous_environment_knowledge.ego_distance[0],
+            print("Previous speed2: ", previous_front_vehicle.measured_speed_tuple)
+            front_vehicle.measured_speed_tuple = \
+                self.__process_measured_speed(environment_knowledge.ego_speed_tuple[0],
+                                              environment_knowledge.ego_distance_tuple,
+                                              previous_environment_knowledge.ego_distance_tuple[0],
                                               environment_knowledge.time_to_last_step)
-            environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].measured_acceleration = \
-                self.__process_measured_acceleration(environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].measured_speed[0],
-                                                     previous_environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id].measured_speed[0],
+            print("Previous speed4: ", previous_front_vehicle.measured_speed_tuple)
+            front_vehicle.measured_acceleration_tuple = \
+                self.__process_measured_acceleration(front_vehicle.measured_speed_tuple[0],
+                                                     previous_front_vehicle.measured_speed_tuple[0],
                                                      environment_knowledge.time_to_last_step)
+            print("Acceleration: ", front_vehicle.acceleration_tuple)
+            print("Measured Acceleration: ", front_vehicle.measured_acceleration_tuple)
+            print("Speed: ", front_vehicle.speed_tuple)
+            print("Measured speed: ", front_vehicle.measured_speed_tuple)
 
         environment_knowledge.speed_limit = speed_limit
         environment_knowledge.weather = weather
         environment_knowledge.front_vehicle_id = self.knowledge.front_vehicle_id
         environment_knowledge.leader_id = self.knowledge.leader_id
 
+        if environment_knowledge.leader_id in environment_knowledge.other_vehicles:
+            leader_data = environment_knowledge.other_vehicles[environment_knowledge.leader_id]
+            if leader_data.speed_tuple[1] == FailureType.no_failure:
+                environment_knowledge.speed_diff_to_leader = leader_data.speed_tuple[0] - ego_speed
+            else:
+                environment_knowledge.speed_diff_to_leader = 100
+        else:
+            environment_knowledge.speed_diff_to_leader = 100
+
+        if environment_knowledge.front_vehicle_id in environment_knowledge.other_vehicles:
+            front_data = environment_knowledge.other_vehicles[environment_knowledge.front_vehicle_id]
+            if front_data.speed_tuple[1] == FailureType.no_failure:
+                environment_knowledge.speed_diff_to_front = front_data.speed_tuple[0] - ego_speed
+            elif front_data.measured_speed_tuple == FailureType.no_failure:
+                environment_knowledge.speed_diff_to_front = front_data.measured_speed_tuple[0] - ego_speed
+            else:
+                environment_knowledge.speed_diff_to_front = 100
+        else:
+            environment_knowledge.speed_diff_to_front = 100
+
+        if ego_speed * 3.6 < environment_knowledge.speed_limit:
+            environment_knowledge.speed_over_limit = 0
+        else:
+            environment_knowledge.speed_over_limit = ego_speed * 3.6 - environment_knowledge.speed_limit
+        environment_knowledge = self.check_max_values(environment_knowledge)
+
+        environment_knowledge.desired_distance = self.__get_min_distance(ego_speed) + self.knowledge.timegap * ego_speed
+        environment_knowledge.distance_error = environment_knowledge.desired_distance - environment_knowledge.ego_distance_tuple[0]
+
         return environment_knowledge
+
+    @staticmethod
+    def __get_min_distance(ego_speed) -> float:
+        if 0 < ego_speed < 5:
+            return 2
+        elif 5 < ego_speed < 9:
+            d = 2 - 0.5 * (ego_speed - 5)
+            return d
+        else:
+            return 0
+
+    def check_max_values(self, env_knowledge: EnvironmentKnowledge):
+        max_throttle = 0
+        max_brake = 0
+        max_dec = 0
+        max_acc = 0
+        other_vehicles = env_knowledge.other_vehicles
+        for vehicle_data in other_vehicles.values():
+            if vehicle_data.throttle is not None:
+                if vehicle_data.throttle > max_throttle:
+                    max_throttle = vehicle_data.throttle
+            if vehicle_data.brake is not None:
+                if vehicle_data.brake > max_brake:
+                    max_brake = vehicle_data.brake
+            if vehicle_data.acceleration_tuple[0] is not None:
+                if vehicle_data.acceleration_tuple[0] < max_dec:
+                    max_dec = vehicle_data.acceleration_tuple[0]
+            elif vehicle_data.measured_acceleration_tuple[0]:
+                if vehicle_data.measured_acceleration_tuple[0] < max_dec:
+                    max_dec = vehicle_data.measured_acceleration_tuple[0]
+            if vehicle_data.acceleration_tuple[0] is not None:
+                if vehicle_data.acceleration_tuple[0] > max_acc:
+                    max_acc = vehicle_data.acceleration_tuple[0]
+            elif vehicle_data.measured_acceleration_tuple[0]:
+                if vehicle_data.measured_acceleration_tuple[0] > max_acc:
+                    max_acc = vehicle_data.measured_acceleration_tuple[0]
+        env_knowledge.max_acc = max_acc
+        env_knowledge.max_dec = max_dec
+        env_knowledge.max_throttle = max_throttle
+        env_knowledge.max_brake = max_brake
+
+        return env_knowledge
 
     @staticmethod
     def __process_acceleration(sensor_data: Optional[carla.IMUMeasurement]) -> Optional[float]:
@@ -339,21 +429,49 @@ class Monitor(object):
                 ego_distance = (sensor_data.distance, FailureType.faulty_delayed)
                 return ego_distance
 
-    @staticmethod
-    def __process_measured_speed(ego_speed: float, current_distance: Tuple[Optional[float], FailureType],
+    def __process_measured_speed(self, ego_speed: float, current_distance: Tuple[Optional[float], FailureType],
                                  previous_distance: float, timegap: float) -> Tuple[Optional[float], FailureType]:
+        old_values: List["EnvironmentKnowledge"] = self.knowledge.get_multiple_steps(5)
+        print(len(old_values))
+        old_distance = []
+        if old_values is not None:
+            for old_knowledge in old_values:
+                if old_knowledge is not None:
+                    if old_knowledge.ego_distance_tuple[0] != -1:
+                        old_distance.append(old_knowledge.ego_distance_tuple[0])
+        if len(old_distance) == 0:
+            previous_speed = 0
+        else:
+            previous_speed = statistics.mean(old_distance)
         if current_distance[1] == FailureType.no_failure:
-            other_speed = (ego_speed + (previous_distance - current_distance[0])/timegap, FailureType.no_failure)
+            speed = ego_speed + (previous_distance - current_distance[0])/timegap
+            other_speed = (speed, FailureType.no_failure)
         else:
             other_speed = (None, FailureType.omission)
+        print("Other speed: ", other_speed)
         return other_speed
 
-    @staticmethod
-    def __process_measured_acceleration(current_speed: float, previous_speed: float, timegap: float) -> \
+    def __process_measured_acceleration(self, current_speed: float, previous_speed: float, timegap: float) -> \
             Tuple[Optional[float], FailureType]:
         acc = (None, FailureType.omission)
+        print("current speed: ", current_speed)
+        print("previous speed: ", previous_speed)
+        print("timegap: ", timegap)
+        old_values = self.knowledge.get_multiple_steps(5)
+        print(len(old_values))
+        old_speeds = []
+        if old_values is not None:
+            for old_knowledge in old_values:
+                if old_knowledge is not None and self.knowledge.front_vehicle_id in old_knowledge.other_vehicles:
+                    if old_knowledge.other_vehicles[self.knowledge.front_vehicle_id].measured_speed_tuple[1] == FailureType.no_failure:
+                        old_speeds.append(old_knowledge.other_vehicles[self.knowledge.front_vehicle_id].measured_speed_tuple[0])
+        if len(old_speeds) == 0:
+            previous_speed = 0
+        else:
+            previous_speed = statistics.mean(old_speeds)
         if current_speed is not None and previous_speed is not None and timegap is not None:
-            acc = ((previous_speed - current_speed) / timegap, FailureType.no_failure)
+            print("Calculating acceleration")
+            acc = (((current_speed - previous_speed) / timegap), FailureType.no_failure)
         return acc
 
     @staticmethod

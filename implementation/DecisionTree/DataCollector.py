@@ -1,10 +1,10 @@
 import csv
 from typing import TYPE_CHECKING,  Dict
-from implementation.data_classes import AdaptationTechnique
+from implementation.data_classes import AdaptationTechnique, FailureType
 from implementation.vehicle.controller import ControllerType
 from matplotlib import pyplot as pyp
 if TYPE_CHECKING:
-    from implementation.data_classes import EnvironmentKnowledge, OtherVehicle
+    from implementation.data_classes import EnvironmentKnowledge, OtherVehicle, SimulationState
     from implementation.platoon_controller.knowledge.knowledge import Knowledge
     from implementation.vehicle.vehicles import ManagedVehicle
 
@@ -16,64 +16,180 @@ class DataCollector(object):
         self.ego_vehicle: "ManagedVehicle" = ego_vehicle
 
         self.knowledge: "Knowledge" = knowledge
-        self.data_file = open(f"decision_tree_data_set_{self.ego_vehicle.role_name}.csv", "a", encoding="UTF8")
+        self.data_file = open(f"decision_tree_data_set_{self.ego_vehicle.role_name}.csv", "w", encoding="UTF8")
+        print(self.data_file)
         self.writer = csv.writer(self.data_file)
+        print("Opened data file")
         self.distance = []
         self.desired_distance = []
         self.timestamp = []
 
-        header = ["Current Controller", "Contr. max acc", "Contr. max dec",
-                  "Ego speed", "Ego acc", "Ego distance to front",
-                  "Front speed", "Front acc", "Front throttle", "Front brake",
-                  "Leader speed", "Leader acc", "Leader throttle", "Leader brake",
-                  "Max acc", "max dec", "max throttle", "max brake",
-                  "Speed limit", "Technique"]
+        self.record_data: bool = False
 
-    def run_step(self, data: "EnvironmentKnowledge"):
+        header = ["Controller", "CMACC", "CMDEC",
+                 "Ego speed", "Ego acc", "Ego dist", "SpeedDifF", "SpeedDifL",
+                 "OverLimit",
+                 "DesDist", "DistError",
+                 "Front speed", "FSF", "Front acc", "FAF", "Front throttle", "Front brake",
+                 "Leader speed", "LSF", "Leader acc", "LAF", "Leader throttle", "Leader brake",
+                 "Max acc", "max dec", "max throttle", "max brake",
+                 "Speed limit", "Technique"]
+        self.writer.writerow(header)
 
-        technique_result = self.classify_data(data)
+    def run_step(self, data: "EnvironmentKnowledge", sim_state: "SimulationState"):
 
-    def classify_data(self, data: "EnvironmentKnowledge"):
+        technique_result = ""
+        if sim_state.classify:
+            if sim_state.no_adap:
+                technique_result = "NO"
+            elif sim_state.par_adap:
+                technique_result = "PA"
+            elif sim_state.struc_adap:
+                technique_result = "SA"
+            elif sim_state.com_adap:
+                technique_result = "CA"
+        else:
+            technique_result = self.classify_data(data, sim_state.classify)
+
+            if technique_result == AdaptationTechnique.NO_ADAPTATION:
+                technique_result = "NO"
+            elif technique_result == AdaptationTechnique.PARAMETER:
+                technique_result = "PA"
+            elif technique_result == AdaptationTechnique.STRUCTURAL:
+                technique_result = "SA"
+            elif technique_result == AdaptationTechnique.CONTEXT:
+                technique_result = "CA"
+        if self.record_data:
+            print(technique_result)
+            self.write_data(data, technique_result)
+        else:
+            return
+
+    def write_data(self, data: "EnvironmentKnowledge", technique):
 
         timestamp = data.timestamp
 
-        max_dec = self.__get_max_deceleration(data.other_vehicles)
-        max_acc = self.__get_max_acceleration(data.other_vehicles)
-        max_throttle = self.__get_max_throttle(data.other_vehicles)
-        max_brake = self.__get_max_brake(data.other_vehicles)
-        front_vehicle_acc = -1
-        front_vehicle_speed = -1
-        front_vehicle_throttle = -1
-        front_vehicle_brake = -1
+        max_dec = "%.4f" % data.max_dec
+        max_acc = "%.4f" % data.max_acc
+        max_throttle = "%.4f" % data.max_throttle
+        max_brake = "%.4f" % data.max_brake
 
-        if self.knowledge.front_vehicle_id != -1:
-            front_vehicle_acc = data.other_vehicles[self.knowledge.front_vehicle_id].acceleration[0]
-            front_vehicle_speed = data.other_vehicles[self.knowledge.front_vehicle_id].speed[0]
-            front_vehicle_throttle = data.other_vehicles[self.knowledge.front_vehicle_id].throttle
-            front_vehicle_brake = data.other_vehicles[self.knowledge.front_vehicle_id].brake
+        if self.knowledge.front_vehicle_id in data.other_vehicles:
+            front_vehicle = data.other_vehicles[self.knowledge.front_vehicle_id]
+            if front_vehicle.acceleration_tuple[1] == FailureType.no_failure:
+                front_vehicle_acc = "%.4f" % front_vehicle.acceleration_tuple[0]
+            else:
+                front_vehicle_acc = "%.4f" % front_vehicle.measured_acceleration_tuple[0]
+            if front_vehicle.speed_tuple[1] == FailureType.no_failure:
+                front_vehicle_speed = "%.4f" % front_vehicle.speed_tuple[0]
+            else:
+                front_vehicle_speed = "%.4f" % front_vehicle.measured_speed_tuple[0]
+            front_vehicle_throttle = "%.4f" % front_vehicle.throttle
+            front_vehicle_brake = "%.4f" % front_vehicle.brake
+            fvs_failure = front_vehicle.speed_tuple[1]
+            fva_failure = front_vehicle.acceleration_tuple[1]
+        else:
+            front_vehicle_acc = 0
+            front_vehicle_speed = 100
+            front_vehicle_throttle = 0
+            front_vehicle_brake = 0
+            fvs_failure = FailureType.omission
+            fva_failure = FailureType.omission
 
-        leader_acc = data.other_vehicles[self.knowledge.leader_id].acceleration[0]
-        leader_speed = data.other_vehicles[self.knowledge.leader_id].speed[0]
-        leader_throttle = data.other_vehicles[self.knowledge.leader_id].throttle
-        leader_brake =  data.other_vehicles[self.knowledge.leader_id].brake
+        if self.knowledge.leader_id in data.other_vehicles:
+            leader_vehicle = data.other_vehicles[self.knowledge.leader_id]
+            if leader_vehicle.acceleration_tuple[1] == FailureType.no_failure:
+                leader_acc = "%.4f" % leader_vehicle.acceleration_tuple[0]
+            else:
+                leader_acc = "%.4f" % leader_vehicle.measured_acceleration_tuple[0]
+            if leader_vehicle.speed_tuple[1] == FailureType.no_failure:
+                leader_speed = "%.4f" % leader_vehicle.speed_tuple[0]
+            else:
+                leader_speed = "%.4f" % leader_vehicle.measured_speed_tuple[0]
+            leader_throttle = "%.4f" % leader_vehicle.throttle
+            leader_brake = "%.4f" % leader_vehicle.brake
+            lvs_failure = leader_vehicle.speed_tuple[1]
+            lva_failure = leader_vehicle.acceleration_tuple[1]
+        else:
+            leader_acc = -1
+            leader_speed = -1
+            leader_throttle = -1
+            leader_brake = -1
+            lvs_failure = FailureType.omission
+            lva_failure = FailureType.omission
 
-        ego_speed =  data.ego_speed[0]
-        ego_acc = data.ego_acceleration[0]
+        ego_speed = "%.4f" % data.ego_speed_tuple[0]
+        ego_acc = "%.4f" %  data.ego_acceleration_tuple[0]
 
-        speed_dif = front_vehicle_speed - ego_speed
+        speed_diff_front = "%.4f" % data.speed_diff_to_front
+        speed_diff_leader = "%.4f" % data.speed_diff_to_leader
+        speed_over_limit = "%.4f" % data.speed_over_limit
 
-        distance_to_front = data.ego_distance[0]
+        distance_to_front = "%.4f" % data.ego_distance_tuple[0]
         current_controller: "ControllerType" = self.knowledge.current_controller
         speed_limit = data.speed_limit
 
         con_max_acc = self.knowledge.cont_max_acc
         con_max_dec = self.knowledge.cont_max_dec
 
-        des_distance = self.knowledge.timegap * ego_speed
+        des_distance = "%.4f" % data.desired_distance
+        distance_error = "%.4f" % data.distance_error
 
         self.distance.append(distance_to_front)
         self.desired_distance.append(des_distance)
         self.timestamp.append(timestamp.elapsed_seconds)
+
+        if current_controller == ControllerType.SPEED:
+            current_controller: str = "Speed"
+        elif current_controller == ControllerType.BRAKE:
+            current_controller: str = "Brake"
+        elif current_controller == ControllerType.DISTANCE:
+            current_controller: str = "Distance"
+
+        write_data = [current_controller, con_max_acc, con_max_dec,
+                      ego_speed, ego_acc, distance_to_front, speed_diff_front, speed_diff_leader, speed_over_limit,
+                      des_distance, distance_error,
+                      front_vehicle_speed, fvs_failure, front_vehicle_acc, fva_failure, front_vehicle_throttle, front_vehicle_brake,
+                      leader_speed, lvs_failure, leader_acc, lva_failure, leader_throttle, leader_brake,
+                      max_acc, max_dec, max_throttle, max_brake,
+                      speed_limit, technique]
+        self.writer.writerow(write_data)
+
+    def classify_data(self, data: "EnvironmentKnowledge", classify):
+
+        current_controller: "ControllerType" = self.knowledge.current_controller
+        ego_speed = data.ego_speed_tuple[0]
+        speed_limit = data.speed_limit
+        distance_to_front = data.ego_distance_tuple[0]
+
+        des_distance = self.knowledge.timegap * ego_speed
+
+        front_vehicle_acc = -1
+        front_vehicle_speed = -1
+        front_vehicle_throttle = -1
+        front_vehicle_brake = -1
+
+        front_vehicle = None
+        if self.knowledge.front_vehicle_id in data.other_vehicles:
+            front_vehicle = data.other_vehicles[self.knowledge.front_vehicle_id]
+            if front_vehicle.acceleration_tuple[1] == FailureType.no_failure:
+                front_vehicle_acc = front_vehicle.acceleration_tuple[0]
+            else:
+                front_vehicle_acc = None
+            if front_vehicle.speed_tuple[1] == FailureType.no_failure:
+                front_vehicle_speed = front_vehicle.speed_tuple[0]
+            else:
+                front_vehicle_speed = front_vehicle.measured_speed_tuple[0]
+            front_vehicle_throttle = front_vehicle.throttle
+            front_vehicle_brake = front_vehicle.brake
+
+        #print(f"Front vehicle acc: {front_vehicle_acc} \n"
+        #      f"Front vehicle speed: {front_vehicle_speed} \n")
+
+        if front_vehicle_speed is None:
+            speed_dif = 100
+        else:
+            speed_dif = front_vehicle_speed - ego_speed
 
         technique = AdaptationTechnique.NO_ADAPTATION
 
@@ -88,109 +204,89 @@ class DataCollector(object):
 
         elif current_controller == ControllerType.DISTANCE:
 
-            if front_vehicle_speed is None or front_vehicle_acc is None \
-                    or front_vehicle_throttle is None or front_vehicle_brake is None:
-                technique = AdaptationTechnique.PARAMETER
-            elif distance_to_front == -1:
-                technique = AdaptationTechnique.STRUCTURAL
-                # PD0 is already covered from S0, same as PS0
-                # PD1
-                if (2 * des_distance) > distance_to_front > des_distance:
-                    # PS1
-                    if ego_speed < front_vehicle_speed <= (speed_limit / 3.6):
-                        technique = AdaptationTechnique.PARAMETER
-                    # PS2
-                    elif ego_speed < front_vehicle_speed > (speed_limit / 3.6):
-                        technique = AdaptationTechnique.STRUCTURAL
-                # PD2
-                elif distance_to_front > 2 * des_distance:
-                    # PS0
-                    if (speed_limit / 3.6 * 0.98) < ego_speed < (speed_limit / 3.6 * 1.02):
-                        technique = AdaptationTechnique.NO_ADAPTATION
-                    elif ego_speed < (speed_limit * 0.95) and ego_speed <= front_vehicle_speed:
-                        technique = AdaptationTechnique.STRUCTURAL
+            if distance_to_front == -1:
+                return AdaptationTechnique.STRUCTURAL
+            elif front_vehicle.speed_tuple[1] != FailureType.no_failure or \
+                    front_vehicle.acceleration_tuple[1] != FailureType.no_failure and \
+                    self.knowledge.cont_max_acc == 2.75:
+                return AdaptationTechnique.PARAMETER
+            # PD0 is already covered from S0, same as PS0
+            # PD1
+            elif (2 * des_distance) > distance_to_front > des_distance:
+                # PS1
+                if ego_speed < front_vehicle_speed <= (speed_limit / 3.6):
+                    return AdaptationTechnique.PARAMETER
+                # PS2
+                elif ego_speed < front_vehicle_speed > (speed_limit / 3.6):
+                    return AdaptationTechnique.STRUCTURAL
+            # PD2
+            elif distance_to_front > 2 * des_distance:
+                # PS0
+                if (speed_limit / 3.6 * 0.98) < ego_speed < (speed_limit / 3.6 * 1.02):
+                    return AdaptationTechnique.NO_ADAPTATION
+                elif ego_speed < (speed_limit * 0.95) and ego_speed <= front_vehicle_speed:
+                    return AdaptationTechnique.STRUCTURAL
 
-            elif speed_limit < (ego_speed * 3.6) <= speed_limit + 5:
-                technique = AdaptationTechnique.PARAMETER
-            elif (ego_speed * 3.6) > speed_limit + 5:
-                technique = AdaptationTechnique.STRUCTURAL
+            elif speed_limit + 5 < (ego_speed * 3.6):
+                return AdaptationTechnique.STRUCTURAL
             # S0
             elif speed_dif >= 0:
                 # C3
                 if distance_to_front < (des_distance / 2):
-                    technique = AdaptationTechnique.STRUCTURAL
+                    return AdaptationTechnique.STRUCTURAL
                 # C0 - C2
                 else:
-                    technique = AdaptationTechnique.NO_ADAPTATION
+                    return AdaptationTechnique.NO_ADAPTATION
             # S1
             elif 0 > speed_dif >= -(5/3.6):
                 # C0, C1
-                if distance_to_front >= (des_distance * 0.95):
-                    technique = AdaptationTechnique.NO_ADAPTATION
+                if distance_to_front >= (des_distance - 4):
+                    return AdaptationTechnique.NO_ADAPTATION
                 # C2
                 elif des_distance > distance_to_front >= (des_distance / 2):
-                    technique = AdaptationTechnique.PARAMETER
+                    return AdaptationTechnique.PARAMETER
                 # C3
                 else:
-                    technique = AdaptationTechnique.STRUCTURAL
+                    return AdaptationTechnique.STRUCTURAL
             # S2
             elif (-5/3.6) > speed_dif >= (-10/3.6):
                 # C0
                 if distance_to_front > des_distance:
-                    technique = AdaptationTechnique.NO_ADAPTATION
+                    return AdaptationTechnique.NO_ADAPTATION
                 # C1
-                elif (des_distance * 1.03) > distance_to_front > (des_distance * 0.97):
-                    technique = AdaptationTechnique.PARAMETER
+                elif (des_distance * 1.05) > distance_to_front > (des_distance * 0.95):
+                    return AdaptationTechnique.PARAMETER
                 # C2
                 elif des_distance > distance_to_front > (des_distance /2):
-                    technique = AdaptationTechnique.STRUCTURAL
+                    return AdaptationTechnique.STRUCTURAL
                 # C3
                 else:
-                    technique = AdaptationTechnique.CONTEXT
+                    return AdaptationTechnique.CONTEXT
             # S3
             else:
                 # C0, C1
-                if distance_to_front >= (des_distance * 0.97):
-                    technique = AdaptationTechnique.STRUCTURAL
+                if distance_to_front >= (des_distance - 5):
+                    return AdaptationTechnique.STRUCTURAL
                 # C2, C3
                 else:
-                    technique = AdaptationTechnique.CONTEXT
+                    return AdaptationTechnique.CONTEXT
 
         elif current_controller == ControllerType.BRAKE:
             if distance_to_front == -1:
-                technique = AdaptationTechnique.STRUCTURAL
+                return AdaptationTechnique.STRUCTURAL
             if distance_to_front > des_distance:
-                technique = AdaptationTechnique.STRUCTURAL
+                return AdaptationTechnique.STRUCTURAL
+        else:
+            return AdaptationTechnique.NO_ADAPTATION
 
-        if technique == AdaptationTechnique.NO_ADAPTATION:
-            technique = "NA"
-        elif technique == AdaptationTechnique.PARAMETER:
-            technique = "PA"
-        elif technique == AdaptationTechnique.STRUCTURAL:
-            technique = "SA"
-        elif technique == AdaptationTechnique.CONTEXT:
-            technique = "CA"
-
-        if current_controller == ControllerType.SPEED:
-            current_controller = "Speed"
-        elif current_controller == ControllerType.BRAKE:
-            current_controller = "Brake"
-        elif current_controller == ControllerType.DISTANCE:
-            current_controller = "Distance"
-
-        write_data =  [current_controller, con_max_acc, con_max_dec,
-                       ego_speed, ego_acc, distance_to_front,
-                       front_vehicle_speed, front_vehicle_acc, front_vehicle_throttle, front_vehicle_brake,
-                       leader_speed, leader_acc, leader_throttle, leader_brake,
-                       max_acc, max_dec, max_throttle, max_brake,
-                       speed_limit, technique]
-        self.writer.writerow(write_data)
-        print(technique)
+        if classify or self.record_data:
+            print(technique)
         return technique
 
     def terminate(self):
         self.data_file.close()
-        self.plot_distance()
+        print("Closed data file")
+        #self.plot_distance()
 
     def plot_distance(self):
         fig1, ax = pyp.subplots(2)
@@ -226,22 +322,22 @@ class DataCollector(object):
 
         max_dec = 0
         for vehicle_data in other_vehicles.values():
-            if vehicle_data.acceleration[0] is not None:
-                if vehicle_data.acceleration[0] < max_dec:
-                    max_dec = vehicle_data.acceleration[0]
-            elif vehicle_data.measured_acceleration[0]:
-                if vehicle_data.measured_acceleration[0] < max_dec:
-                    max_dec = vehicle_data.measured_acceleration[0]
+            if vehicle_data.acceleration_tuple[0] is not None:
+                if vehicle_data.acceleration_tuple[0] < max_dec:
+                    max_dec = vehicle_data.acceleration_tuple[0]
+            elif vehicle_data.measured_acceleration_tuple[0]:
+                if vehicle_data.measured_acceleration_tuple[0] < max_dec:
+                    max_dec = vehicle_data.measured_acceleration_tuple[0]
         return max_dec
 
     def __get_max_acceleration(self, other_vehicles: Dict[int, "OtherVehicle"]) -> float:
 
         max_acc = 0
         for vehicle_data in other_vehicles.values():
-            if vehicle_data.acceleration[0] is not None:
-                if vehicle_data.acceleration[0] > max_acc:
-                    max_acc = vehicle_data.acceleration[0]
-            elif vehicle_data.measured_acceleration[0]:
-                if vehicle_data.measured_acceleration[0] > max_acc:
-                    max_acc = vehicle_data.measured_acceleration[0]
+            if vehicle_data.acceleration_tuple[0] is not None:
+                if vehicle_data.acceleration_tuple[0] > max_acc:
+                    max_acc = vehicle_data.acceleration_tuple[0]
+            elif vehicle_data.measured_acceleration_tuple[0]:
+                if vehicle_data.measured_acceleration_tuple[0] > max_acc:
+                    max_acc = vehicle_data.measured_acceleration_tuple[0]
         return max_acc

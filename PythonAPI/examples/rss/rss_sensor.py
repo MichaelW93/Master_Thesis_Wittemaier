@@ -204,7 +204,7 @@ class RssSensor(object):
                                                          actor_constellation_data.other_match_object.enuPosition.centerPoint.y)**2)
                         # print("vehicle-{} unstructured check: other distance {}".format(actor_id, actor_distance))
 
-                        if actor_constellation_data.ego_dynamics_on_route.ego_speed < 0.01:
+                        if actor_constellation_data.ego_dynamics_on_route.ego_speed_tuple < 0.01:
                             # both vehicles stand still, so we have to analyze in detail if we possibly want to use
                             # unstructured mode to cope with blockades on the road...
 

@@ -7,6 +7,7 @@ from abc  import ABC
 from matplotlib import pyplot as pyp
 from typing import TYPE_CHECKING, Optional
 from implementation.configuration_parameter import *
+from implementation.data_classes import FailureType
 
 if TYPE_CHECKING:
     from implementation.data_classes import *
@@ -22,16 +23,16 @@ class ControllerType(Enum):
 class Controller(ABC):
 
     def __init__(self, ego_vehicle):
-        self.ego_vehicle: carla.Vehicle = ego_vehicle
+        self.ego_vehicle: "Vehicle" = ego_vehicle
         self.controller_type: ControllerType
 
 class DistanceController(Controller):
 
     def __init__(self, ego_vehicle):
         super(DistanceController, self).__init__(ego_vehicle)
-        self.k1: float = 1.0
-        self.k2: float = 0.2
-        self.k3: float = 0.4
+        self.k1: float = 1.2
+        self.k2: float = 0.8
+        self.k3: float = 0.1
 
         self.max_acceleration: float = 2.75
         self.max_deceleration: float = -5
@@ -49,12 +50,22 @@ class DistanceController(Controller):
         speed_front = 0
         acc = []
         for _, vehicle in environment_knowledge.other_vehicles.items():
-            acc.append(vehicle.acceleration[0])
-            if vehicle.is_front_vehicle:
-                speed_front = vehicle.speed[0]
+            if vehicle.acceleration_tuple[1] == FailureType.no_failure:
+                acc.append(vehicle.acceleration_tuple[0])
+                if vehicle.is_front_vehicle:
+                    if vehicle.speed_tuple[1] == FailureType.no_failure:
+                        speed_front = vehicle.speed_tuple[0]
+                    else:
+                        speed_front = vehicle.measured_speed_tuple[0]
+            else:
+                if vehicle.is_front_vehicle:
+                    acc.append(vehicle.measured_acceleration_tuple[0])
+        if len(acc) == 0: # placeholder for data creation
+            speed_front = environment_knowledge.speed_limit
+            acc.append(environment_knowledge.ego_acceleration_tuple[0])
 
-        speed_ego = environment_knowledge.ego_speed[0]
-        distance = environment_knowledge.ego_distance[0]
+        speed_ego = environment_knowledge.ego_speed_tuple[0]
+        distance = environment_knowledge.ego_distance_tuple[0]
         r = self.__get_min_distance(speed_ego)  # distance at standstill
         timestep = environment_knowledge.time_to_last_step
 
@@ -63,10 +74,13 @@ class DistanceController(Controller):
         # acc = 0
 
         acc_ego = self.k3 * min(acc) + self.k2 * (speed_front - speed_ego) + self.k1 * error
+        if self.ego_vehicle.role_name == "Follower_2":
+            print("Distance error", error)
+            print("acc ego", acc_ego)
         if acc_ego > 0:
-            acc_ego = max(self.max_acceleration, acc_ego)
+            acc_ego = min(self.max_acceleration, acc_ego)
         else:
-            acc_ego = min(self.max_deceleration, acc_ego)
+            acc_ego = max(self.max_deceleration, acc_ego)
         if acc_ego > 0:
             ego_target_speed = ((0.5 * acc_ego * timestep * timestep + speed_ego) * 3.6) + 0.6
         else:
@@ -143,7 +157,6 @@ class PIDController(object):
 
         return control
 
-
 class PIDLongitudinalController(object):
     """
     PIDLongitudinalController implements longitudinal control using a PID.
@@ -165,6 +178,8 @@ class PIDLongitudinalController(object):
         self._k_i = K_I
         self._dt = dt
         self._error_buffer = deque(maxlen=10)
+
+        self._average_queue = deque(maxlen=20)
 
     def run_step(self, target_speed, debug=False):
         """
@@ -208,37 +223,60 @@ class BrakeController(Controller):
     def __init__(self, ego_vehicle):
         super(BrakeController, self).__init__(ego_vehicle)
 
+        self.k1: float = 0.1
+        self.k2: float = 0.1
+        self.k3: float = 0.025
+
     def run_step(self, env_knowledge: "EnvironmentKnowledge"):
 
-        max_deceleration = 0
-        max_brake = 0
+        max_deceleration = env_knowledge.max_dec
+        max_brake = env_knowledge.max_brake
 
-        for vehicle in env_knowledge.other_vehicles.values():
-            if vehicle.measured_acceleration[1] == FailureType.no_failure:
-                if vehicle.acceleration[1] == FailureType.no_failure:
-                    vehicle_dec = min(vehicle.measured_acceleration[0], vehicle.acceleration[0])
-                else:
-                    vehicle_dec = vehicle.measured_acceleration[0]
+        dec = []
+        speed_front = 0
+        for _, vehicle in env_knowledge.other_vehicles.items():
+
+            if vehicle.acceleration_tuple[1] == FailureType.no_failure:
+                dec.append(vehicle.acceleration_tuple[0])
             else:
-                if vehicle.acceleration[1] == FailureType.no_failure:
-                    vehicle_dec = vehicle.acceleration[0]
+                dec.append(vehicle.measured_acceleration_tuple[0])
+            if vehicle.is_front_vehicle:
+                if vehicle.speed_tuple[1] == FailureType.no_failure:
+                    speed_front = vehicle.speed_tuple[0]
                 else:
-                    vehicle_dec = 0
-            if vehicle.brake > max_brake:
-                max_brake = vehicle.brake
-            if vehicle_dec < max_deceleration:
-                max_deceleration = vehicle_dec
+                    speed_front = vehicle.measured_speed_tuple[0]
+        if len(dec) == 0: # placeholder for data creation
+            speed_front = env_knowledge.speed_limit
+            dec.append(env_knowledge.ego_acceleration_tuple[0])
+
+        speed_ego = env_knowledge.ego_speed_tuple[0]
+        distance = env_knowledge.ego_distance_tuple[0]
+
+        des_distance = env_knowledge.desired_distance
+
+        error = distance - des_distance
+
+        print(f"=======================================\n"
+              f"values for {self.ego_vehicle.role_name}: \n "
+              f"distance to front: {distance} \n"
+              f"desired distance: {des_distance} \n"
+              f"error {error}, \
+              speed front: {speed_front}, \
+              speed ego: {speed_ego}, \
+              max_dec: {max(dec)}")
+
+        brake = self.k3 * max(dec) - self.k2 * (speed_front - speed_ego) - self.k1 * error
+
+        if brake < 0:
+            brake = 0
 
         control = carla.VehicleControl()
-        if max_brake > 0.9:
-            control.brake = 1
-            return control
-        else:
-            control.brake = max_brake
-            return control
+        control.brake = min(brake, 1)
+        control.throttle = 0
 
-        target_speed = 0.5 * max_deceleration * env_knowledge.time_to_last_step**2 + env_knowledge.ego_speed[0]
+        print(f"Brake value for {self.ego_vehicle.role_name}: {brake}")
 
+        return control
 
 
 def get_speed(vehicle):

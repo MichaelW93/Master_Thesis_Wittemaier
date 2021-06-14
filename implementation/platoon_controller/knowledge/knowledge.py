@@ -16,13 +16,20 @@ class Knowledge(object):
         self.other_vehicles: Dict[int, OtherVehicle] = {}
         self.current_controller: "ControllerType" = ControllerType.SPEED
         self.target_speed: float = 60
-        self.cont_max_acc: float = 0
-        self.cont_max_dec: float = 0
+        self.cont_max_acc: float = 5
+        self.cont_max_dec: float = -5
         self.timegap: float = 0.5
 
     def get_current_simulation_step(self) -> EnvironmentKnowledge:
-        if self.current_simulation_step is not None:
-            return self.current_simulation_step
+        if self.simulation_step_history[0] is not None:
+            return self.simulation_step_history[0]
+        else:
+            tmp = EnvironmentKnowledge()
+            return tmp
+
+    def get_multiple_steps(self, number_of_steps) -> List[EnvironmentKnowledge]:
+
+        return self.simulation_step_history[:number_of_steps - 1]
 
     def get_past_simulation_step(self, past_simulation_step: int = 1) -> EnvironmentKnowledge:
         """
@@ -41,12 +48,10 @@ class Knowledge(object):
         :param environment_knowledge:
         :return:
         """
-        for i, knowledge in reversed(list(enumerate(self.simulation_step_history))):
-            if i == 0:
-                self.current_simulation_step = environment_knowledge
-                self.simulation_step_history[i] = environment_knowledge
-            else:
-                self.simulation_step_history[i] = self.simulation_step_history[i - 1]
+        self.simulation_step_history.insert(0, environment_knowledge)
+        del self.simulation_step_history[-1]
+        #print("List start: ", self.simulation_step_history[0])
+        #print("List second place: ",self.simulation_step_history[1])
 
     def store_environment_knowledge(self, environment_knowledge: EnvironmentKnowledge) -> None:
         self.update_log(environment_knowledge)
