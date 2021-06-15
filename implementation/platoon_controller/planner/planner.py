@@ -41,6 +41,9 @@ class Planner(object):
         front_vehicle = env_knowledge.other_vehicles[self.knowledge.front_vehicle_id]
 
         if controller == ControllerType.DISTANCE:
+            # no front vehicle
+            if env_knowledge.ego_distance_tuple[0] == -1:
+                return Plan.SWITCH_TO_SPEED
             # obey speed limit
             if (env_knowledge.ego_speed_tuple[0] * 3.6) > env_knowledge.speed_limit + 4.5:
                 return Plan.SWITCH_TO_SPEED

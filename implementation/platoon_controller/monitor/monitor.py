@@ -272,6 +272,7 @@ class Monitor(object):
         max_dec = 0
         max_acc = 0
         other_vehicles = env_knowledge.other_vehicles
+
         for vehicle_data in other_vehicles.values():
             if vehicle_data.throttle is not None:
                 if vehicle_data.throttle > max_throttle:
@@ -291,6 +292,7 @@ class Monitor(object):
             elif vehicle_data.measured_acceleration_tuple[0]:
                 if vehicle_data.measured_acceleration_tuple[0] > max_acc:
                     max_acc = vehicle_data.measured_acceleration_tuple[0]
+
         env_knowledge.max_acc = max_acc
         env_knowledge.max_dec = max_dec
         env_knowledge.max_throttle = max_throttle

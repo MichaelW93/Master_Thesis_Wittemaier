@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 class DataCollector(object):
 
-    def __init__(self, knowledge: "Knowledge", ego_vehicle):
+    def __init__(self, knowledge: "Knowledge", ego_vehicle: "ManagedVehicle"):
 
         self.header = []
         self.ego_vehicle: "ManagedVehicle" = ego_vehicle
@@ -36,7 +36,7 @@ class DataCollector(object):
                  "Speed limit", "Technique"]
         self.writer.writerow(header)
 
-    def run_step(self, data: "EnvironmentKnowledge", sim_state: "SimulationState"):
+    def run_step(self, data: "EnvironmentKnowledge", sim_state: "SimulationState") -> None:
 
         technique_result = ""
         if sim_state.classify:
@@ -49,8 +49,7 @@ class DataCollector(object):
             elif sim_state.com_adap:
                 technique_result = "CA"
         else:
-            technique_result = self.classify_data(data, sim_state.classify)
-
+            technique_result = self.classify_data(data)
             if technique_result == AdaptationTechnique.NO_ADAPTATION:
                 technique_result = "NO"
             elif technique_result == AdaptationTechnique.PARAMETER:
@@ -59,13 +58,15 @@ class DataCollector(object):
                 technique_result = "SA"
             elif technique_result == AdaptationTechnique.CONTEXT:
                 technique_result = "CA"
-        if self.record_data:
+        if self.ego_vehicle.role_name == "Follower_1":
             print(technique_result)
+            print(self.knowledge.current_controller)
+        if self.record_data:
             self.write_data(data, technique_result)
         else:
             return
 
-    def write_data(self, data: "EnvironmentKnowledge", technique):
+    def write_data(self, data: "EnvironmentKnowledge", technique: str) -> None:
 
         timestamp = data.timestamp
 
@@ -155,36 +156,22 @@ class DataCollector(object):
                       speed_limit, technique]
         self.writer.writerow(write_data)
 
-    def classify_data(self, data: "EnvironmentKnowledge", classify):
+    def classify_data(self, data: "EnvironmentKnowledge") -> AdaptationTechnique:
 
         current_controller: "ControllerType" = self.knowledge.current_controller
         ego_speed = data.ego_speed_tuple[0]
         speed_limit = data.speed_limit
         distance_to_front = data.ego_distance_tuple[0]
-
-        des_distance = self.knowledge.timegap * ego_speed
-
-        front_vehicle_acc = -1
+        des_distance = data.desired_distance
         front_vehicle_speed = -1
-        front_vehicle_throttle = -1
-        front_vehicle_brake = -1
 
         front_vehicle = None
         if self.knowledge.front_vehicle_id in data.other_vehicles:
             front_vehicle = data.other_vehicles[self.knowledge.front_vehicle_id]
-            if front_vehicle.acceleration_tuple[1] == FailureType.no_failure:
-                front_vehicle_acc = front_vehicle.acceleration_tuple[0]
-            else:
-                front_vehicle_acc = None
             if front_vehicle.speed_tuple[1] == FailureType.no_failure:
                 front_vehicle_speed = front_vehicle.speed_tuple[0]
             else:
                 front_vehicle_speed = front_vehicle.measured_speed_tuple[0]
-            front_vehicle_throttle = front_vehicle.throttle
-            front_vehicle_brake = front_vehicle.brake
-
-        #print(f"Front vehicle acc: {front_vehicle_acc} \n"
-        #      f"Front vehicle speed: {front_vehicle_speed} \n")
 
         if front_vehicle_speed is None:
             speed_dif = 100
@@ -195,36 +182,35 @@ class DataCollector(object):
 
         if current_controller == ControllerType.SPEED:
             # PS2
-            if ego_speed < speed_limit:
-                technique = AdaptationTechnique.NO_ADAPTATION
-            elif distance_to_front > (des_distance * 2):
-                technique = AdaptationTechnique.NO_ADAPTATION
+            if distance_to_front == -1:
+                return AdaptationTechnique.NO_ADAPTATION
+            if ego_speed < front_vehicle_speed > ((speed_limit + 5) / 3.6):
+                return AdaptationTechnique.NO_ADAPTATION
             else:
-                technique = AdaptationTechnique.STRUCTURAL
+                return AdaptationTechnique.STRUCTURAL
 
         elif current_controller == ControllerType.DISTANCE:
 
+            # no front vehicle
             if distance_to_front == -1:
                 return AdaptationTechnique.STRUCTURAL
-            elif front_vehicle.speed_tuple[1] != FailureType.no_failure or \
-                    front_vehicle.acceleration_tuple[1] != FailureType.no_failure and \
-                    self.knowledge.cont_max_acc == 2.75:
-                return AdaptationTechnique.PARAMETER
+
             # PD0 is already covered from S0, same as PS0
             # PD1
             elif (2 * des_distance) > distance_to_front > des_distance:
                 # PS1
-                if ego_speed < front_vehicle_speed <= (speed_limit / 3.6):
-                    return AdaptationTechnique.PARAMETER
+                if ego_speed < front_vehicle_speed <= ((speed_limit + 4) / 3.6):
+                    return AdaptationTechnique.STRUCTURAL
                 # PS2
-                elif ego_speed < front_vehicle_speed > (speed_limit / 3.6):
+                elif ego_speed < front_vehicle_speed > ((speed_limit + 4)/ 3.6):
                     return AdaptationTechnique.STRUCTURAL
             # PD2
             elif distance_to_front > 2 * des_distance:
                 # PS0
-                if (speed_limit / 3.6 * 0.98) < ego_speed < (speed_limit / 3.6 * 1.02):
+                if (speed_limit - 3)/3.6 < ego_speed < ((speed_limit + 3) / 3.6) and \
+                        (front_vehicle_speed - 3) < ego_speed < (front_vehicle_speed + 3):
                     return AdaptationTechnique.NO_ADAPTATION
-                elif ego_speed < (speed_limit * 0.95) and ego_speed <= front_vehicle_speed:
+                if ego_speed < front_vehicle_speed - 3 <= ((speed_limit + 4) / 3.6):
                     return AdaptationTechnique.STRUCTURAL
 
             elif speed_limit + 5 < (ego_speed * 3.6):
@@ -232,7 +218,7 @@ class DataCollector(object):
             # S0
             elif speed_dif >= 0:
                 # C3
-                if distance_to_front < (des_distance / 2):
+                if distance_to_front < (des_distance/2):
                     return AdaptationTechnique.STRUCTURAL
                 # C0 - C2
                 else:
@@ -243,8 +229,8 @@ class DataCollector(object):
                 if distance_to_front >= (des_distance - 4):
                     return AdaptationTechnique.NO_ADAPTATION
                 # C2
-                elif des_distance > distance_to_front >= (des_distance / 2):
-                    return AdaptationTechnique.PARAMETER
+                elif des_distance > distance_to_front >= (des_distance/2):
+                    return AdaptationTechnique.STRUCTURAL
                 # C3
                 else:
                     return AdaptationTechnique.STRUCTURAL
@@ -254,22 +240,33 @@ class DataCollector(object):
                 if distance_to_front > des_distance:
                     return AdaptationTechnique.NO_ADAPTATION
                 # C1
-                elif (des_distance * 1.05) > distance_to_front > (des_distance * 0.95):
-                    return AdaptationTechnique.PARAMETER
+                elif (des_distance + 2) > distance_to_front > (des_distance - 2):
+                    return AdaptationTechnique.STRUCTURAL
                 # C2
-                elif des_distance > distance_to_front > (des_distance /2):
+                elif des_distance > distance_to_front > (des_distance/2):
                     return AdaptationTechnique.STRUCTURAL
                 # C3
                 else:
                     return AdaptationTechnique.CONTEXT
             # S3
-            else:
+            elif speed_dif < -10:
                 # C0, C1
                 if distance_to_front >= (des_distance - 5):
                     return AdaptationTechnique.STRUCTURAL
                 # C2, C3
                 else:
                     return AdaptationTechnique.CONTEXT
+
+            # all data available, but in ACC mode
+            elif front_vehicle.speed_tuple[1] == FailureType.no_failure and \
+                    front_vehicle.acceleration_tuple[1] == FailureType.no_failure and \
+                    self.knowledge.cont_max_acc == 2:
+                return AdaptationTechnique.PARAMETER
+                # missing parameter
+            elif front_vehicle.speed_tuple[1] != FailureType.no_failure or \
+                    front_vehicle.acceleration_tuple[1] != FailureType.no_failure and \
+                    self.knowledge.cont_max_acc == 2.75:
+                return AdaptationTechnique.PARAMETER
 
         elif current_controller == ControllerType.BRAKE:
             if distance_to_front == -1:
@@ -278,10 +275,6 @@ class DataCollector(object):
                 return AdaptationTechnique.STRUCTURAL
         else:
             return AdaptationTechnique.NO_ADAPTATION
-
-        if classify or self.record_data:
-            print(technique)
-        return technique
 
     def terminate(self):
         self.data_file.close()
