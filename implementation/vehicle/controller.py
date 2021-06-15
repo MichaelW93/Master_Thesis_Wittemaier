@@ -26,6 +26,7 @@ class Controller(ABC):
         self.ego_vehicle: "Vehicle" = ego_vehicle
         self.controller_type: ControllerType
 
+
 class DistanceController(Controller):
 
     def __init__(self, ego_vehicle):
