@@ -31,6 +31,8 @@ class Executor(object):
             self.ego_vehicle.controller = SpeedController(self.ego_vehicle)
             self.knowledge.current_controller = ControllerType.SPEED
             self.knowledge.target_speed = self.knowledge.get_current_environment_knowledge().speed_limit
+            self.knowledge.cont_max_acc = 10
+            self.knowledge.cont_max_dec = -3.5
             return
         elif plan == Plan.SWITCH_TO_ACC:
             self.ego_vehicle.controller = DistanceController(self.ego_vehicle)
@@ -45,6 +47,7 @@ class Executor(object):
         elif plan == Plan.SWITCH_TO_BRAKE:
             self.ego_vehicle.controller = BrakeController(self.ego_vehicle)
             self.knowledge.current_controller = ControllerType.BRAKE
+            self.ego_vehicle.controller.emergency_brake = False
             return
         elif plan == Plan.ADAPT_TARGET_SPEED:
             self.knowledge.target_speed = env_knowledge.speed_limit
@@ -53,5 +56,10 @@ class Executor(object):
             return
         elif plan == Plan.NO_CHANGE:
             return
+        elif plan == Plan.EMERGENCY_BRAKE:
+            self.ego_vehicle.controller = BrakeController(self.ego_vehicle)
+            self.knowledge.current_controller = ControllerType.BRAKE
+            self.ego_vehicle.controller.emergency_brake = False
         else:
+            print(plan)
             print("Unknown plan")

@@ -115,6 +115,9 @@ class ManualControlWindow(object):
 
         return vehicle_control
 
+    def destroy(self):
+        pygame.quit()
+
     def render(self, display):
         if self.surface is not None:
             display.blit(self.surface, (0, 0))

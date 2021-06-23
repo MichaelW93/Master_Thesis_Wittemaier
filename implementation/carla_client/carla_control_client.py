@@ -92,7 +92,7 @@ class CarlaControlClient(object):
         for i in range(len(self.managed_vehicles)):
             self.managed_vehicles[i].setup_vehicle(i)
 
-        self.setup_front_vehicles()
+        self.setup_other_vehicles()
         self.manual_control_window = ManualControlWindow(self.carla_world, self.carla_map,
                                                          self.leader_vehicle.ego_vehicle,
                                                          self.leader_camera, self.carla_client)
@@ -100,16 +100,13 @@ class CarlaControlClient(object):
     def user_control_window_thread_execution(self):
         self.user_control_window.window_loop()
 
-    def setup_front_vehicles(self):
-        for i in range(len(self.managed_vehicles)):
-            if i == 0:
-                self.managed_vehicles[i].front_vehicles = [self.leader_vehicle]
-                self.managed_vehicles[i].front_vehicle_is_leader = True
-            elif i == 1:
-                self.managed_vehicles[i].front_vehicles = [self.managed_vehicles[0]]
-            else:
-                self.managed_vehicles[i].front_vehicles = self.managed_vehicles[0:(i-1)]
-            print("Front vehicles: ", self.managed_vehicles[i].front_vehicles)
+    def setup_other_vehicles(self):
+        for current_vehicle in self.managed_vehicles:
+            current_vehicle.other_vehicles.append(self.leader_vehicle)
+
+            for vehicle in self.managed_vehicles:
+                if vehicle.ego_vehicle.id != current_vehicle.ego_vehicle.id:
+                    current_vehicle.other_vehicles.append(vehicle)
 
 
     def initialize_carla_client(self) -> None:
@@ -200,7 +197,7 @@ class CarlaControlClient(object):
             self.simulation_state.vehicles_speed_available[vehicle.ego_vehicle.id] = True
             self.simulation_state.vehicles_acceleration_available[vehicle.ego_vehicle.id] = True
             print("Managed vehicle spawned")
-            spawn_point_offset -= 20
+            spawn_point_offset -= 10
             self.carla_world.tick()
             self.communication_handler.vehicles[vehicle.ego_vehicle.id] = vehicle
 
@@ -240,13 +237,17 @@ class CarlaControlClient(object):
 
                 timestamp = world_snapshot.timestamp
                 self.communication_handler.run_step(self.simulation_state)
-                manual_vehicle_control = self.manual_control_window.tick(self.pygame_clock)
-                self.leader_vehicle.run_step(manual_vehicle_control, self.simulation_state, timestamp)
+                manual_vehicle_control = None
+                if self.manual_control_window is not None:
+                    manual_vehicle_control = self.manual_control_window.tick(self.pygame_clock)
+                if self.leader_vehicle is not None:
+                    self.leader_vehicle.run_step(manual_vehicle_control, self.simulation_state, timestamp)
                 for vehicle_number in range(len(self.managed_vehicles)):
-                    self.managed_vehicles[vehicle_number].run_step(timestamp,
-                                                                   self.simulation_state.weather,
-                                                                   self.simulation_state.speed_limit,
-                                                                   self.simulation_state)
+                    if self.managed_vehicles[vehicle_number] is not None:
+                        self.managed_vehicles[vehicle_number].run_step(timestamp,
+                                                                       self.simulation_state.weather,
+                                                                       self.simulation_state.speed_limit,
+                                                                       self.simulation_state)
             except KeyboardInterrupt:
                 running = False
                 self.exit_client()
@@ -317,6 +318,9 @@ class CarlaControlClient(object):
         self.__remove_environment_vehicles()
         self.scenario_controller.reset()
         self.communication_handler.reset()
+        if self.manual_control_window is not None:
+            self.manual_control_window.destroy()
+            self.manual_control_window = None
 
     def __remove_environment_vehicles(self):
 

@@ -234,6 +234,8 @@ class ManagedVehicle(Vehicle):
         self.target_speed = 0
         self.data_collector: DataCollector = None
 
+        self.other_vehicles: List["Vehicle"] = []
+
     def run_step(self, timestamp: carla.Timestamp, weather: carla.WeatherParameters, speed_limit: float, sim_state: "SimulationState") -> None:
 
         environment_knowledge = self.platoon_controller.run_step(timestamp, weather, speed_limit)
@@ -273,9 +275,9 @@ class ManagedVehicle(Vehicle):
         self.sensors.append(self.imu_sensor)
 
         blueprint = blueprint_library.find("sensor.other.obstacle")
-        blueprint.set_attribute("distance", str(50))
+        blueprint.set_attribute("distance", str(60))
         blueprint.set_attribute("only_dynamics", str(True))
-        blueprint.set_attribute("hit_radius", str(5))
+        blueprint.set_attribute("hit_radius", str(10))
         if DEBUG_MODE:
             blueprint.set_attribute("debug_linetrace", str(True))
 

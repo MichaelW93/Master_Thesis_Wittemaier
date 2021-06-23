@@ -26,7 +26,7 @@ LEADER_CAMERA_ROTATION_YAW: float = 0
 LEADER_CAMERA_ROTATION_ROLL: float = 0
 
 """Spawn Parameter"""
-LEADER_SPAWN_LOCATION_X: float = 40.0
+LEADER_SPAWN_LOCATION_X: float = 30.0
 LEADER_SPAWN_LOCATION_Y: float = -190.0
 LEADER_SPAWN_LOCATION_Z: float = 1
 LEADER_SPAWN_ROTATION_YAW: float = 0.0
@@ -58,7 +58,7 @@ DEBUG_MODE: bool = False
 MOVE_SPECTATOR: bool = True
 
 """Safety Parameter"""
-SPEED_THRESHOLD_FACTOR: float = 0.01 # [s]
+SPEED_THRESHOLD_FACTOR: float = 0.5 # [s]
 MAX_ACCELERATION: float = 8.0 # [m/s²]
 MAX_DECELERATION: float = -14.0 #[m/s²]
 DELAY_THRESHOLD: float = 5.0 #[ms]

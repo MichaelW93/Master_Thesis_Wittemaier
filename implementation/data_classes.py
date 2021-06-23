@@ -18,6 +18,7 @@ class Plan(Enum):
     ADAPT_TARGET_SPEED = 5
     ADAPT_TARGET_DISTANCE = 6
     NO_CHANGE = 7
+    EMERGENCY_BRAKE = 8
 
 
 class FailureType(Enum):
@@ -60,13 +61,15 @@ class EnvironmentKnowledge(object):
     time_to_last_step: float = 0.05
     communication_delay: Optional[float] = 0
     ego_acceleration_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-    ego_distance_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
+    ego_distance_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.no_front_vehicle)
     ego_speed_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     ego_name: str = ""
 
     speed_diff_to_front: float = 0
     speed_diff_to_leader: float = 0
     speed_over_limit: float = 0
+
+    front_over_limit: float = 0
 
     max_acc: float = 0
     max_dec: float = 0

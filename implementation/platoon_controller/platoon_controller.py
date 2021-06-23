@@ -33,7 +33,13 @@ class PlatoonController(object):
             self.plan = self.planner.run_step(adaptation_technique, environment_knowledge)
         else:
             self.new_plan_available = False
-            print(self.plan)
+
+        print(f"{self.ego_vehicle.role_name}: \n"
+              f"Current Controller: {self.knowledge.current_controller} \n"
+              f"Technique from tree: {adaptation_technique}, \n"
+              f"Plan: {self.plan}\n"
+              f"")
+
         self.executor.run_step(self.plan, environment_knowledge)
 
         return environment_knowledge
