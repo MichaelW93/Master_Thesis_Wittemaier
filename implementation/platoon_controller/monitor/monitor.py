@@ -80,7 +80,7 @@ class Monitor(object):
                 front_data: CommunicationData = self.communication_data[front_id]
                 if front_id in other_vehicles:
                     other_vehicles[front_id].platoonable = True
-                if front_data is None or front_data.front_id == -1:
+                if front_data is None or front_data.front_id == -1 or front_data.front_id is None:
                     # Vehicle has no front_vehicle --> is Leading vehicle
                     if front_id in other_vehicles:
                         # Vehicle is already known
@@ -108,9 +108,6 @@ class Monitor(object):
                     other_vehicles[front_id] = vehicle
                 front_id = -1
         self.knowledge.other_vehicles = other_vehicles
-
-    def check_communication_data(self, comm_data: "CommunicationData", previous_timestamp):
-        acc_data = self.__check_acceleration_for_failures
 
     def process_distance(self) -> Tuple[int, int]:
 
@@ -183,16 +180,16 @@ class Monitor(object):
                                                   previous_environment_knowledge.timestamp.elapsed_seconds
 
         environment_knowledge.ego_speed_tuple = self.__check_speed_for_failures(
-            ego_speed,
-            previous_environment_knowledge.ego_speed_tuple,
-            previous_environment_knowledge.ego_acceleration_tuple,
-            previous_environment_knowledge.timestamp,
-            timestamp)
+                                                    ego_speed,
+                                                    previous_environment_knowledge.ego_speed_tuple,
+                                                    previous_environment_knowledge.ego_acceleration_tuple,
+                                                    previous_environment_knowledge.timestamp,
+                                                    timestamp)
 
         environment_knowledge.ego_acceleration_tuple = self.__check_acceleration_for_failures(
-            self.__process_acceleration(ego_acc),
-            timestamp,
-            previous_environment_knowledge.timestamp)
+                                                            self.__process_acceleration(ego_acc),
+                                                            timestamp,
+                                                            previous_environment_knowledge.timestamp)
 
         for _, vehicle in self.knowledge.other_vehicles.items():
             if vehicle.id in self.communication_data:
@@ -201,46 +198,56 @@ class Monitor(object):
                     vehicle_acc = (None, FailureType.no_front_vehicle)
                     vehicle_speed = (None, FailureType.no_front_vehicle)
                 else:
-                    vehicle_acc = self.__check_acceleration_for_failures(
-                        vehicle_comm_data.acceleration, timestamp,
-                        previous_environment_knowledge.timestamp)
-
                     environment_knowledge.other_vehicles[vehicle.id] = vehicle
 
                     if vehicle.id in previous_environment_knowledge.other_vehicles:
-                        speed_tuple = previous_environment_knowledge.other_vehicles[vehicle.id].speed_tuple
-                        acc_tuple = previous_environment_knowledge.other_vehicles[vehicle.id].acceleration_tuple
+                        previous_speed_tuple = previous_environment_knowledge.other_vehicles[vehicle.id].speed_tuple
+                        previous_acc_tuple = previous_environment_knowledge.other_vehicles[vehicle.id].acceleration_tuple
                     else:
-                        speed_tuple = (None, FailureType.no_failure)
-                        acc_tuple = (None, FailureType.no_failure)
-
+                        previous_speed_tuple = (None, FailureType.no_failure)
+                        previous_acc_tuple = (None, FailureType.no_failure)
                     vehicle_speed = self.__check_speed_for_failures(
-                        vehicle_comm_data.speed,
-                        speed_tuple,
-                        acc_tuple,
-                        previous_environment_knowledge.timestamp,
-                        timestamp)
+                                        vehicle_comm_data.speed,
+                                        previous_speed_tuple,
+                                        previous_acc_tuple,
+                                        previous_environment_knowledge.timestamp,
+                                        timestamp)
+                    vehicle_acc = self.__check_acceleration_for_failures(
+                                        vehicle_comm_data.acceleration, timestamp,
+                                        previous_environment_knowledge.timestamp)
 
                 if vehicle.id in environment_knowledge.other_vehicles:
-                    environment_knowledge.other_vehicles[vehicle.id].speed_tuple = vehicle_speed
-                    environment_knowledge.other_vehicles[vehicle.id].acceleration_tuple = vehicle_acc
-                    environment_knowledge.other_vehicles[vehicle.id].steering = self.communication_data[vehicle.id].steering
-                    environment_knowledge.other_vehicles[vehicle.id].brake = self.communication_data[vehicle.id].brake
-                    environment_knowledge.other_vehicles[vehicle.id].throttle = self.communication_data[vehicle.id].throttle
+                    other_vehicle = environment_knowledge.other_vehicles[vehicle.id]
+                    comm_data = self.communication_data[vehicle.id]
+
+                    other_vehicle.speed_tuple = vehicle_speed
+                    other_vehicle.acceleration_tuple = vehicle_acc
+                    if comm_data.steering is not None:
+                        other_vehicle.steering = comm_data.steering
+                    else:
+                        other_vehicle.steering = 0
+                    if comm_data.brake is not None:
+                        other_vehicle.brake = comm_data.brake
+                    else:
+                        other_vehicle.brake = -1
+                    if comm_data.throttle is not None:
+                        other_vehicle.throttle = comm_data.throttle
+                    else:
+                        other_vehicle.throttle = -1
 
         if self.knowledge.front_vehicle_id in previous_environment_knowledge.other_vehicles:
             front_vehicle = environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id]
             previous_front_vehicle = previous_environment_knowledge.other_vehicles[self.knowledge.front_vehicle_id]
 
             environment_knowledge.ego_distance_tuple = self.__check_distance_for_failure(
-                ego_distance,
-                previous_environment_knowledge.ego_speed_tuple,
-                previous_environment_knowledge.ego_acceleration_tuple,
-                previous_front_vehicle.acceleration_tuple,
-                previous_front_vehicle.speed_tuple,
-                previous_environment_knowledge.ego_distance_tuple,
-                timestamp,
-                previous_environment_knowledge.timestamp)
+                                                            ego_distance,
+                                                            previous_environment_knowledge.ego_speed_tuple,
+                                                            previous_environment_knowledge.ego_acceleration_tuple,
+                                                            previous_front_vehicle.acceleration_tuple,
+                                                            previous_front_vehicle.speed_tuple,
+                                                            previous_environment_knowledge.ego_distance_tuple,
+                                                            timestamp,
+                                                            previous_environment_knowledge.timestamp)
             if self.ego_vehicle.role_name == "Follower_0":
                 print(environment_knowledge.ego_distance_tuple)
             front_vehicle.measured_speed_tuple = \
@@ -271,12 +278,13 @@ class Monitor(object):
             front_data = environment_knowledge.other_vehicles[environment_knowledge.front_vehicle_id]
             if front_data.speed_tuple[1] == FailureType.no_failure:
                 environment_knowledge.speed_diff_to_front = front_data.speed_tuple[0] - ego_speed
-            elif front_data.measured_speed_tuple == FailureType.no_failure:
+            else:
                 environment_knowledge.speed_diff_to_front = front_data.measured_speed_tuple[0] - ego_speed
+        else:
+            if environment_knowledge.ego_distance_tuple[1] == FailureType.no_failure:
+                environment_knowledge.speed_diff_to_front = environment_knowledge.other_vehicles[environment_knowledge.front_vehicle_id].measured_speed_tuple[0] - ego_speed
             else:
                 environment_knowledge.speed_diff_to_front = 100
-        else:
-            environment_knowledge.speed_diff_to_front = 100
 
         environment_knowledge.speed_over_limit = ego_speed * 3.6 - environment_knowledge.speed_limit
         environment_knowledge = self.check_max_values(environment_knowledge)
@@ -306,7 +314,7 @@ class Monitor(object):
         else:
             return 0
 
-    def check_max_values(self, env_knowledge: EnvironmentKnowledge):
+    def check_max_values(self, env_knowledge: EnvironmentKnowledge) -> EnvironmentKnowledge:
         max_throttle = 0
         max_brake = 0
         max_dec = 0
@@ -396,7 +404,7 @@ class Monitor(object):
         """"""
         """Check for omission"""
         if acceleration is None:
-            acceleration_data = (None, FailureType.omission)
+            acceleration_data = (-1, FailureType.omission)
             return acceleration_data
 
         """Check for delay"""

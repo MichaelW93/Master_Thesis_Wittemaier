@@ -221,18 +221,17 @@ class DataCollector(object):
             # PS2
             if edf == FailureType.no_front_vehicle:
                 technique = AdaptationTechnique.NO_ADAPTATION
-            elif over_limit < 5 and (over_limit + speed_dif * 3.6) > 5:
+            elif dist_error < 2:
                 # front vehicle is driving too fast
-                technique = AdaptationTechnique.NO_ADAPTATION
+                technique = AdaptationTechnique.STRUCTURAL
             else:
                 # front vehicle is driving in acceptable speed limit deviation
-                technique = AdaptationTechnique.STRUCTURAL
+                technique = AdaptationTechnique.NO_ADAPTATION
 
         elif current_controller == ControllerType.DISTANCE:
 
             # no front vehicle
             if edf == FailureType.no_front_vehicle:
-                print("Distance negative")
                 technique = AdaptationTechnique.STRUCTURAL
 
             # all data available, but in ACC mode
@@ -247,7 +246,6 @@ class DataCollector(object):
                     technique = AdaptationTechnique.PARAMETER
 
             if over_limit > 3:
-                print("too fast")
                 technique = AdaptationTechnique.STRUCTURAL
 
             # S0
@@ -260,11 +258,11 @@ class DataCollector(object):
             # S1
             elif 0 > speed_dif >= -(5 / 3.6):
                 # C0, C1
-                if dist_error >= -0.3:
-                    # no adaptation
-                    pass
+                if dist_error >= -0.1:
+                    if acc_front <= -2:
+                        technique = AdaptationTechnique.STRUCTURAL
                 # C2
-                elif -0.3 > dist_error >= -0.5:
+                elif -0.1 > dist_error >= -0.2:
                     print("S1, C2")
                     technique = AdaptationTechnique.STRUCTURAL
                 # C3
@@ -278,22 +276,16 @@ class DataCollector(object):
                     # no adaptation
                     pass
                 # C1
-                elif 0 > dist_error >= -0.25:
+                elif 0 > dist_error >= -0.1:
                     print("S2, C1")
                     technique = AdaptationTechnique.STRUCTURAL
                 # C2
-                elif -0.25 > dist_error >= -0.5:
+                elif -0.1 > dist_error >= -0.3:
                     print("S2, C2")
                     technique = AdaptationTechnique.STRUCTURAL
                 # C3
                 else:
                     technique = AdaptationTechnique.CONTEXT
-
-            if dist_error < 0 and acc_front < -9:
-                technique = AdaptationTechnique.CONTEXT
-
-            if dist_error > 2 and front_over_limit < 0:
-                technique = AdaptationTechnique.STRUCTURAL
             # S3
             elif speed_dif < -10 / 3.6:
                 # C0, C1
@@ -303,6 +295,12 @@ class DataCollector(object):
                 # C2, C3
                 else:
                     technique = AdaptationTechnique.CONTEXT
+
+            if dist_error < 0 and acc_front < -9:
+                technique = AdaptationTechnique.CONTEXT
+
+            if dist_error > 2 and front_over_limit < 0:
+                technique = AdaptationTechnique.STRUCTURAL
 
         elif current_controller == ControllerType.BRAKE:
             if edf == FailureType.no_front_vehicle:

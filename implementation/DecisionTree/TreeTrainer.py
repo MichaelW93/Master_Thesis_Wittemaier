@@ -23,21 +23,22 @@ class TreeTrainer(object):
         self.classify_data()
 
         file = pandas.read_csv("cleaned_file.csv")
-        #self.test_file = pandas.read_csv("Connection_Failure_Data_Set.csv")
+        self.test_file = pandas.read_csv("Connection_Failure_Data_Set.csv")
         weights = self.balance_classes()
-        self.decision_tree = DecisionTreeClassifier(min_samples_leaf=10, class_weight=weights)
+        self.decision_tree = DecisionTreeClassifier(min_samples_leaf=15, class_weight=weights, min_samples_split=15, min_weight_fraction_leaf=0.0,
+                                                    min_impurity_decrease=0.001, max_depth=10)
         file = self.map_data(file)
-        #self.test_file = self.map_data(self.test_file)
+        self.test_file = self.map_data(self.test_file)
         self.features = None
         x, y = self.prepare_data(file)
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3)
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.1)
 
         self.train_tree(x_train, y_train)
 
         y_pred = self.decision_tree.predict(x_test)
 
         #x_test_2, y_test_2 = self.prepare_data(self.test_file)
-        #y_pred_2 = self.decision_tree.predict(x_test_2)
+        # y_pred_2 = self.decision_tree.predict(x_test_2)
         print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
         #print("Accuracy:", metrics.accuracy_score(y_test_2, y_pred_2))
         data = tree.export_graphviz(self.decision_tree, filled=True, out_file=None, feature_names=self.features, class_names=["NO", "PA", "SA", "CA"])
@@ -158,6 +159,15 @@ class TreeTrainer(object):
                     if edf == FailureType.no_front_vehicle:
                         dist_error = 0
 
+                    if fsf == FailureType.omission or faf == FailureType.omission:
+                        front_brake = -1
+                        front_throttle = -1
+                        fsf = FailureType.omission
+                        faf = FailureType.omission
+                        counter += 1
+                    else:
+                        front_throttle = row[12]
+
                     technique: AdaptationTechnique = None
 
                     if current_controller == ControllerType.SPEED:
@@ -167,7 +177,7 @@ class TreeTrainer(object):
                         elif dist_error < 2:
                             technique = AdaptationTechnique.STRUCTURAL
                         else:
-                            technique = AdaptationTechnique.STRUCTURAL
+                            technique = AdaptationTechnique.NO_ADAPTATION
 
                     elif current_controller == ControllerType.DISTANCE:
 
@@ -226,6 +236,7 @@ class TreeTrainer(object):
                             # C3
                             else:
                                 technique = AdaptationTechnique.CONTEXT
+
                         # S3
                         elif speed_dif < -10 / 3.6:
                             # C0, C1
@@ -249,8 +260,6 @@ class TreeTrainer(object):
                         elif dist_error > 0 and front_brake > 0.9 or acc_front < -9:
                             technique = AdaptationTechnique.PARAMETER
 
-                    print(technique)
-
                     if technique is None:
                         technique = AdaptationTechnique.NO_ADAPTATION
 
@@ -263,7 +272,7 @@ class TreeTrainer(object):
                     data = [current_controller, controller_max_acc, controller_max_dec,
                             row[3], speed_dif, row[5], over_limit,
                             dist_error, edf,
-                            fsf, row[10], faf, row[12], row[13], front_over_limit,
+                            fsf, row[10], faf, front_throttle, front_brake, front_over_limit,
                             lsf, row[16], laf, row[18], row[19],
                             row[20], row[21], row[22], row[23],
                             technique]

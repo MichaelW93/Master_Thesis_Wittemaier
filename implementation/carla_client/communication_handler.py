@@ -50,10 +50,13 @@ class CommunicationHandler(object):
             data_dict = self.vehicles_data[self.delay_in_simulation_ticks]
             if vehicle_id in data_dict:
                 data = data_dict[vehicle_id]
-                if not self.sim_state.vehicles_speed_available[vehicle_id]:
+                if not self.sim_state.vehicles_data_available[vehicle_id]:
                     data.speed = None
-                elif not self.sim_state.vehicles_acceleration_available[vehicle_id]:
                     data.acceleration = None
+                    data.throttle = None
+                    data.brake = None
+                    data.front_id = None
+                    data.steering = None
             else:
                 return
         return data

@@ -28,31 +28,24 @@ class UserControlWindow(object):
 
     def __initialize_layout(self):
 
-        follower_speed_checkboxes = []
-        follower_acceleration_checkboxes = []
-        follower_distance_checkboxes = []
+        follower_data_checkboxes = []
 
         for i in range(NUMBER_OF_MANAGED_VEHICLES):
-            follower_speed_checkboxes.append(
-                sg.Checkbox(f"managed vehicle {i} speed available", default=True, key=f"-MANAGED_SPEED_{i}-"))
-            follower_acceleration_checkboxes.append(
-                sg.Checkbox(f"managed vehicle {i} acceleration available", default=True, key=f"-MANAGED_ACCELERATION_{i}-"))
+            follower_data_checkboxes.append(
+                sg.Checkbox(f"managed vehicle {i} data available", default=True, key=f"-MANAGED_DATA_{i}-"))
 
         self.layout = [
-            [*follower_distance_checkboxes],
-            [*follower_acceleration_checkboxes],
-            [*follower_speed_checkboxes],
+            [*follower_data_checkboxes],
             [sg.Checkbox("Classify", default=False, key="-CLASSIFY-")],
             [sg.Radio("NA", "TECHNIQUE", default=True, key="-NA-"),
-             sg.Radio("PA", "TECHNIQUE", default=False, key="-PA-"),
-             sg.Radio("SA", "TECHNIQUE", default=False, key="-SA-"),
-             sg.Radio("CA", "TECHNIQUE", default=False, key="-CA-")],
+                 sg.Radio("PA", "TECHNIQUE", default=False, key="-PA-"),
+                 sg.Radio("SA", "TECHNIQUE", default=False, key="-SA-"),
+                 sg.Radio("CA", "TECHNIQUE", default=False, key="-CA-")],
             [sg.Radio("CACC", "CONTROLLER", default=True, key="-CACC-"),
-             sg.Radio("ACC", "CONTROLLER", default=False, key="-ACC-"),
-             sg.Radio("SPEED", "CONTROLLER", default=False, key="-SPEED-"),
-             sg.Radio("BREAK", "CONTROLLER", default=False, key="-BREAK-")],
-            [sg.Checkbox("leader_acceleration_available", default=True, key="-LEADER_ACCELERATION-")],
-            [sg.Checkbox("leader_speed_available", default=True, key="-LEADER_SPEED-")],
+                 sg.Radio("ACC", "CONTROLLER", default=False, key="-ACC-"),
+                 sg.Radio("SPEED", "CONTROLLER", default=False, key="-SPEED-"),
+                 sg.Radio("BREAK", "CONTROLLER", default=False, key="-BREAK-")],
+            [sg.Checkbox("leader_data_available", default=True, key="-LEADER_DATA-")],
             [sg.Checkbox("Record Data", default=False, key="-RECORD-")],
             [sg.InputText("60", key="-SPEED_LIMIT-"), sg.Text("Speed Limit")],
             [sg.InputText("60", key="-LEADER_TARGET_SPEED-"), sg.Text("Leader target speed")],
@@ -108,11 +101,9 @@ class UserControlWindow(object):
         if len(self.vehicle_ids) > 1:
             for i in range(NUMBER_OF_MANAGED_VEHICLES):
                 id = self.vehicle_ids[i + 1]
-                simulation_state.vehicles_speed_available[id] = values[f"-MANAGED_SPEED_{i}-"]
-                simulation_state.vehicles_acceleration_available[id] = values[f"-MANAGED_ACCELERATION_{i}-"]
+                simulation_state.vehicles_data_available[id] = values[f"-MANAGED_DATA_{i}-"]
 
-        simulation_state.vehicles_speed_available[self.vehicle_ids[0]] = values["-LEADER_SPEED-"]
-        simulation_state.vehicles_acceleration_available[self.vehicle_ids[0]] = values["-LEADER_ACCELERATION-"]
+        simulation_state.vehicles_data_available[self.vehicle_ids[0]] = values["-LEADER_DATA-"]
         simulation_state.leader_target_speed = float(values["-LEADER_TARGET_SPEED-"])
         simulation_state.environment_vehicles_target_speed = float(values["-ENVIRONMENT_TARGET_SPEED-"])
         simulation_state.speed_limit = float(values["-SPEED_LIMIT-"])

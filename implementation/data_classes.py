@@ -120,9 +120,7 @@ class EnvironmentKnowledge(object):
 @dataclass()
 class SimulationState(object):
 
-    vehicles_speed_available: Dict[int, bool] = field(default_factory=dict)
-    vehicles_acceleration_available: Dict[int, bool] = field(default_factory=dict)
-    followers_distance_available: Dict[int, bool] = field(default_factory=dict)
+    vehicles_data_available: Dict[int, bool] = field(default_factory=dict)
 
     leader_target_speed: float = 60.0
     environment_vehicles_target_speed: float = 60

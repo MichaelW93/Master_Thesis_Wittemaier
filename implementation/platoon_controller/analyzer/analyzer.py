@@ -53,24 +53,19 @@ class Analyzer(object):
         contr_max_acc = self.knowledge.cont_max_acc
         contr_max_dec = self.knowledge.cont_max_dec
 
-        ego_speed = analyzer_input.ego_speed_tuple[0]
         ego_acc = analyzer_input.ego_acceleration_tuple[0]
-        ego_distance = analyzer_input.ego_distance_tuple[0]
         speed_diff_to_front = analyzer_input.speed_diff_to_front
         speed_diff_to_leader = analyzer_input.speed_diff_to_leader
         speed_over_limit = analyzer_input.speed_over_limit
-        des_dist = analyzer_input.desired_distance
         dist_error = analyzer_input.distance_error
 
         if front_vehicle is not None:
-            front_speed = front_vehicle.speed_tuple[0]
             fvs_failure = self.__convert_failure_type(front_vehicle.speed_tuple[1])
             front_acc = front_vehicle.acceleration_tuple[0]
             fva_failure = self.__convert_failure_type(front_vehicle.acceleration_tuple[1])
             front_throttle = front_vehicle.throttle
             front_brake = front_vehicle.brake
         else:
-            front_speed = -1
             fvs_failure = self.__convert_failure_type(FailureType.omission)
             front_acc = 0
             fva_failure = self.__convert_failure_type(FailureType.omission)
@@ -78,14 +73,12 @@ class Analyzer(object):
             front_brake = -1
 
         if leader_vehicle is not None:
-            leader_speed = leader_vehicle.speed_tuple[0]
             lvs_failure = self.__convert_failure_type(leader_vehicle.speed_tuple[1])
             leader_acc = leader_vehicle.acceleration_tuple[0]
             lva_failure = self.__convert_failure_type(leader_vehicle.acceleration_tuple[1])
             leader_throttle = leader_vehicle.throttle
             leader_brake = leader_vehicle.brake
         else:
-            leader_speed = -1
             lvs_failure = self.__convert_failure_type(FailureType.omission)
             leader_acc = -1
             lva_failure = self.__convert_failure_type(FailureType.omission)
@@ -98,8 +91,6 @@ class Analyzer(object):
         max_brake = analyzer_input.max_brake
 
         front_over_limit = speed_over_limit + speed_diff_to_front
-
-        speed_limit = analyzer_input.speed_limit
 
         data = [
             [current_controller, contr_max_acc, contr_max_dec,

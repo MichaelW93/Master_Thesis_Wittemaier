@@ -176,8 +176,7 @@ class CarlaControlClient(object):
         self.leader_vehicle.spawn_vehicle(spawn_point, "vehicle.audi.tt")
         self.leader_vehicle.setup_vehicle()
         self.carla_world.tick()
-        self.simulation_state.vehicles_speed_available[self.leader_vehicle.ego_vehicle.id] = True
-        self.simulation_state.vehicles_acceleration_available[self.leader_vehicle.ego_vehicle.id] = True
+        self.simulation_state.vehicles_data_available[self.leader_vehicle.ego_vehicle.id] = True
         self.communication_handler.vehicles[self.leader_vehicle.ego_vehicle.id] = self.leader_vehicle
 
     def spawn_managed_vehicles(self) -> None:
@@ -194,8 +193,7 @@ class CarlaControlClient(object):
             blueprint = random.choice(["vehicle.audi.a2", "vehicle.audi.etron", "vehicle.audi.tt", "vehicle.charger2020.charger2020"])
             self.managed_vehicles[i].spawn_vehicle(spawn_point, "vehicle.audi.tt")
             self.managed_vehicles[i].leader_vehicle = self.leader_vehicle
-            self.simulation_state.vehicles_speed_available[vehicle.ego_vehicle.id] = True
-            self.simulation_state.vehicles_acceleration_available[vehicle.ego_vehicle.id] = True
+            self.simulation_state.vehicles_data_available[vehicle.ego_vehicle.id] = True
             print("Managed vehicle spawned")
             spawn_point_offset -= 10
             self.carla_world.tick()
@@ -265,9 +263,7 @@ class CarlaControlClient(object):
             simulation_state.leader_acceleration_available = False
             simulation_state.leader_speed_available = False
             for i in range(len(self.managed_vehicles)):
-                simulation_state.followers_distance_available[i] = False
-                simulation_state.vehicles_acceleration_available[i] = False
-                simulation_state.vehicles_speed_available[i] = False
+                simulation_state.vehicles_data_available[i] = False
         for vehicle in self.managed_vehicles:
             vehicle.data_collector.record_data = simulation_state.record_data
             if vehicle.platoon_controller.knowledge.current_controller == ControllerType.DISTANCE:
