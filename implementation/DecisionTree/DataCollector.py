@@ -221,7 +221,7 @@ class DataCollector(object):
             # PS2
             if edf == FailureType.no_front_vehicle:
                 technique = AdaptationTechnique.NO_ADAPTATION
-            elif dist_error < 2:
+            elif dist_error < 2 and front_over_limit < 3:
                 # front vehicle is driving too fast
                 technique = AdaptationTechnique.STRUCTURAL
             else:

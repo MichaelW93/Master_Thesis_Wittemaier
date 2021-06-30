@@ -23,12 +23,13 @@ class TreeTrainer(object):
         self.classify_data()
 
         file = pandas.read_csv("cleaned_file.csv")
-        self.test_file = pandas.read_csv("Connection_Failure_Data_Set.csv")
+        #self.test_file = pandas.read_csv("Connection_Failure_Data_Set.csv")
         weights = self.balance_classes()
         self.decision_tree = DecisionTreeClassifier(min_samples_leaf=15, class_weight=weights, min_samples_split=15, min_weight_fraction_leaf=0.0,
                                                     min_impurity_decrease=0.001, max_depth=10)
+        #self.decision_tree = DecisionTreeClassifier()
         file = self.map_data(file)
-        self.test_file = self.map_data(self.test_file)
+        #self.test_file = self.map_data(self.test_file)
         self.features = None
         x, y = self.prepare_data(file)
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.1)
@@ -43,9 +44,9 @@ class TreeTrainer(object):
         #print("Accuracy:", metrics.accuracy_score(y_test_2, y_pred_2))
         data = tree.export_graphviz(self.decision_tree, filled=True, out_file=None, feature_names=self.features, class_names=["NO", "PA", "SA", "CA"])
         graph = pydotplus.graph_from_dot_data(data)
-        graph.write_png("my_tree.png")
+        graph.write_png("Connection_Failure_Tree.png")
 
-        img = pltimg.imread("my_tree.png")
+        img = pltimg.imread("Connection_Failure_Tree.png")
         imgplot = plt.imshow(img)
         plt.show()
 
@@ -153,8 +154,9 @@ class TreeTrainer(object):
                         counter += 1
                         continue
                     elif front_over_limit > 15:
-                        counter += 1
-                        continue
+                        pass
+                        #counter += 1
+                        #continue
 
                     if edf == FailureType.no_front_vehicle:
                         dist_error = 0
@@ -168,13 +170,17 @@ class TreeTrainer(object):
                     else:
                         front_throttle = row[12]
 
+                    if speed_dif == 100 and edf == FailureType.no_failure:
+                        counter += 1
+                        continue
+
                     technique: AdaptationTechnique = None
 
                     if current_controller == ControllerType.SPEED:
                         # PS2
                         if edf == FailureType.no_front_vehicle:
                             technique = AdaptationTechnique.NO_ADAPTATION
-                        elif dist_error < 2:
+                        elif dist_error < 2 and front_over_limit < 3:
                             technique = AdaptationTechnique.STRUCTURAL
                         else:
                             technique = AdaptationTechnique.NO_ADAPTATION

@@ -486,15 +486,17 @@ class Monitor(object):
                 if old_knowledge is not None:
                     if old_knowledge.ego_distance_tuple[0] != -1:
                         old_distance.append(old_knowledge.ego_distance_tuple[0])
-        if len(old_distance) == 0:
-            previous_speed = 0
-        else:
-            previous_speed = statistics.mean(old_distance)
         if current_distance[1] == FailureType.no_failure:
-            speed = ego_speed + (previous_distance - current_distance[0])/timegap
-            other_speed = (speed, FailureType.no_failure)
+            old_distance.append(current_distance[0])
+        if len(old_distance) == 0:
+            previous_distance = 0
         else:
-            other_speed = (None, FailureType.omission)
+            previous_distance = statistics.mean(old_distance)
+        if ego_speed  is not None and previous_distance is not None and timegap is not None:
+            speed = ego_speed + (previous_distance - previous_distance)/timegap
+        else:
+            speed = None
+        other_speed = (speed, FailureType.no_failure)
         return other_speed
 
     def __process_measured_acceleration(self, current_speed: float, previous_speed: float, timegap: float) -> \
