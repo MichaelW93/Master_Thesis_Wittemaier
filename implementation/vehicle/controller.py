@@ -264,6 +264,7 @@ class BrakeController(Controller):
             if brake < 0:
                 brake = 0
         else:
+            print("emergency braking")
             brake = 1
 
         control = carla.VehicleControl()

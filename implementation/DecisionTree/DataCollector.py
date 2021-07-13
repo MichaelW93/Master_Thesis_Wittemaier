@@ -265,6 +265,8 @@ class DataCollector(object):
 
             if over_limit > 3:
                 technique = AdaptationTechnique.STRUCTURAL
+            elif front_over_limit > 3:
+                technique = AdaptationTechnique.STRUCTURAL
 
             # S0
             if speed_dif >= 0:
