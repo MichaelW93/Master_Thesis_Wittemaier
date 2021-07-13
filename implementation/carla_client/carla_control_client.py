@@ -182,7 +182,7 @@ class CarlaControlClient(object):
     def spawn_managed_vehicles(self) -> None:
         spawn_point_offset = 0
         for i in range(NUMBER_OF_MANAGED_VEHICLES):
-            vehicle = ManagedVehicle(self.carla_world, f"Follower_{i}", self.communication_handler)
+            vehicle = ManagedVehicle(self.carla_world, f"Follower_{i}", self.communication_handler, self.carla_map)
             self.managed_vehicles.append(vehicle)
             spawn_point = carla.Transform()
             spawn_point.location.x = MANAGED_VEHICLE_SPAWN_LOCATION_X + spawn_point_offset
@@ -198,6 +198,31 @@ class CarlaControlClient(object):
             spawn_point_offset -= 10
             self.carla_world.tick()
             self.communication_handler.vehicles[vehicle.ego_vehicle.id] = vehicle
+
+    def spawn_environment_vehicle(self, transform: carla.Transform) -> EnvironmentVehicle:
+        environment_vehicle = EnvironmentVehicle(self.carla_world, "Cut In Vehicle 1", self.communication_handler)
+        self.environment_vehicles.append(environment_vehicle)
+        environment_vehicle.spawn_vehicle(transform, "vehicle.audi.tt", "0,255,0")
+        environment_vehicle.setup_vehicle()
+        self.environment_vehicles.append(environment_vehicle)
+        for vehicle in self.managed_vehicles:
+            vehicle.other_vehicles.append(environment_vehicle)
+        return environment_vehicle
+
+    def __run_cut_in_scenario(self):
+        spawn_point = carla.Transform()
+        spawn_point.location.x = 19
+        spawn_point.location.y = -205
+        spawn_point.location.z = 2
+
+        spawn_point.location.x = MANAGED_VEHICLE_SPAWN_LOCATION_X
+        spawn_point.location.y = MANAGED_VEHICLE_SPAWN_LOCATION_Y - 3
+        spawn_point.location.z = MANAGED_VEHICLE_SPAWN_LOCATION_Z
+
+        spawn_point.rotation.yaw = 0
+        scenario_vehicle = self.spawn_environment_vehicle(spawn_point)
+        self.current_scenario = CutInScenario(self.leader_vehicle, self.managed_vehicles[0],
+                                              self.carla_world, scenario_vehicle)
 
     def game_loop(self) -> None:
 
@@ -236,6 +261,8 @@ class CarlaControlClient(object):
                 timestamp = world_snapshot.timestamp
                 self.communication_handler.run_step(self.simulation_state)
                 manual_vehicle_control = None
+                if self.current_scenario is not None:
+                    self.current_scenario.run_step(self.simulation_state)
                 if self.manual_control_window is not None:
                     manual_vehicle_control = self.manual_control_window.tick(self.pygame_clock)
                 if self.leader_vehicle is not None:
@@ -319,10 +346,13 @@ class CarlaControlClient(object):
             self.manual_control_window = None
 
     def __remove_environment_vehicles(self):
-
         for vehicle in self.environment_vehicles:
+            for managed_vehicle in self.managed_vehicles:
+                if vehicle in managed_vehicle.other_vehicles:
+                    managed_vehicle.other_vehicles.remove(vehicle)
             vehicle.destroy()
         self.environment_vehicles = []
+        self.current_scenario = None
 
     def exit_client(self) -> None:
 

@@ -209,7 +209,7 @@ class TreeTrainer(object):
                         # S0
                         if speed_dif >= 0:
                             # C3
-                            if dist_error < -0.5:
+                            if dist_error < -0.75:
                                 technique = AdaptationTechnique.STRUCTURAL
                             # C0 - C2
                             else:
@@ -218,11 +218,11 @@ class TreeTrainer(object):
                         # S1
                         elif 0 > speed_dif >= -(5 / 3.6):
                             # C0, C1
-                            if dist_error >= -0.1:
+                            if dist_error >= -0.2:
                                 if acc_front <= -2:
                                     technique = AdaptationTechnique.STRUCTURAL
                             # C2
-                            elif -0.1 > dist_error >= -0.2:
+                            elif -0.2 > dist_error >= -0.4:
                                 technique = AdaptationTechnique.STRUCTURAL
                             # C3
                             else:
@@ -230,14 +230,14 @@ class TreeTrainer(object):
                         # S2
                         elif (-5 / 3.6) > speed_dif >= (-10 / 3.6):
                             # C0
-                            if dist_error >= 0:
+                            if dist_error >= 0.1:
                                 # no adaptation
                                 pass
                             # C1
-                            elif 0 > dist_error >= -0.1:
+                            elif 0.1 > dist_error >= -0.2:
                                 technique = AdaptationTechnique.STRUCTURAL
                             # C2
-                            elif -0.1 > dist_error >= -0.3:
+                            elif -0.2 > dist_error >= -0.4:
                                 technique = AdaptationTechnique.STRUCTURAL
                             # C3
                             else:
@@ -246,8 +246,10 @@ class TreeTrainer(object):
                         # S3
                         elif speed_dif < -10 / 3.6:
                             # C0, C1
-                            if dist_error > -0.1:
+                            if dist_error > -0.2:
                                 technique = AdaptationTechnique.STRUCTURAL
+                            #elif dist_error > 0.2:
+                            #   technique = AdaptationTechnique.NO_ADAPTATION
                             # C2, C3
                             else:
                                 technique = AdaptationTechnique.CONTEXT
@@ -261,9 +263,9 @@ class TreeTrainer(object):
                     elif current_controller == ControllerType.BRAKE:
                         if edf == FailureType.no_front_vehicle:
                             technique = AdaptationTechnique.STRUCTURAL
-                        elif dist_error > 0.1:
+                        elif dist_error > 0.2 and speed_dif < 5 and front_brake == 0:
                             technique = AdaptationTechnique.STRUCTURAL
-                        elif dist_error > 0 and front_brake > 0.9 or acc_front < -9:
+                        elif dist_error < 0 and front_brake > 0.9 or acc_front < -9:
                             technique = AdaptationTechnique.PARAMETER
 
                     if technique is None:

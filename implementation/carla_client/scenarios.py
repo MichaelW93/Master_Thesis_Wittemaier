@@ -34,13 +34,12 @@ class Scenario(object):
 
 class CutInScenario(Scenario):
 
-    def __init__(self, front_vehicle: Union[LeaderVehicle, ManagedVehicle], rear_vehicle: ManagedVehicle, carla_world: carla.World,
-                 communication_handler):
+    def __init__(self, front_vehicle: Union[LeaderVehicle, ManagedVehicle], rear_vehicle: ManagedVehicle,
+                 carla_world: carla.World, ego_vehicle: EnvironmentVehicle):
 
         super(CutInScenario, self).__init__()
         self.carla_world = carla_world
-        self.communication_handler = communication_handler
-        self.ego_vehicle: EnvironmentVehicle = self.spawn_environment_vehicle()
+        self.ego_vehicle: EnvironmentVehicle = ego_vehicle
         self.front_vehicle: LeaderVehicle = front_vehicle
         self.rear_vehicle: ManagedVehicle = rear_vehicle
 
@@ -50,22 +49,8 @@ class CutInScenario(Scenario):
         self.waited: bool = False
         self.counter = 0
 
-    def spawn_environment_vehicle(self) -> EnvironmentVehicle:
-        spawn_point = carla.Transform()
-        spawn_point.location.x = 19
-        spawn_point.location.y = -205
-        spawn_point.location.z = 2
-
-        spawn_point.rotation.yaw = 180
-
-        environment_vehicle = EnvironmentVehicle(self.carla_world, "Cut_In_Vehicle_1", self.communication_handler)
-        environment_vehicle.spawn_vehicle(spawn_point, "vehicle.audi.tt", "0,255,0", "Cut_In_Vehicle_1")
-        environment_vehicle.setup_vehicle()
-        self.carla_world.tick()
-        self.communication_handler.vehicles[environment_vehicle.ego_vehicle.id] = environment_vehicle
-        return environment_vehicle
-
     def run_step(self, simulation_state: SimulationState):
+
 
         speed = velocity_to_speed(self.ego_vehicle.get_velocity()) * 3.6
 
@@ -120,7 +105,7 @@ class CutInScenario(Scenario):
         distance = math.sqrt((transform_front.location.x - transform_rear.location.x) ** 2 +
                              (transform_front.location.y - transform_rear.location.y) ** 2)
         waypoint_rear = self.carla_world.get_map().get_waypoint(transform_rear.location)
-        waypoints_left = waypoint_rear.get_left_lane().next(abs(distance)/2)
+        waypoints_left = waypoint_rear.get_left_lane().next(abs(distance)/1.25)
         print("Waypoint_Left: ", waypoints_left[0])
         teleport_transform = waypoints_left[0].transform
         teleport_transform.location.z = max(transform_front.location.z, transform_rear.location.z)

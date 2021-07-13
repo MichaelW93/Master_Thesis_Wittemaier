@@ -49,9 +49,9 @@ class OtherVehicle:
     measured_acceleration_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     speed_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
     acceleration_tuple: Tuple[Optional[float], FailureType] = (0, FailureType.omission)
-    throttle: float = 0
-    brake: float = 0
-    steering: float = 0
+    throttle: float = -1
+    brake: float = -1
+    steering: float = -1
 
 
 @dataclass()

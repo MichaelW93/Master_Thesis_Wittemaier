@@ -103,14 +103,16 @@ class EnvironmentVehicle(Vehicle):
             'dt': 1 / CARLA_SERVER_FPS
         }
         self.steering_controller = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.ego_vehicle)
-        self.controller = PIDController(self, args_long_dict)
+        self.controller = SpeedController(self.ego_vehicle)
 
     def run_step(self, target_speed: float) -> None:
         """Main loop for the Vehicle. Handles the calculation of the vehicle control.
         :param target_speed: vehicles target speed in [km/h]"""
 
         if self.controller is not None:
-            self.control = self.controller.run_step(target_speed=target_speed)
+            env_knowledge = EnvironmentKnowledge()
+            env_knowledge.speed_limit = target_speed
+            self.control = self.controller.run_step(env_knowledge)
         if self.steering_controller is not None:
             self.control.steer = self.steering_controller.goToNextTargetLocation()
         if self.control is not None:
@@ -220,7 +222,7 @@ class LeaderVehicle(Vehicle):
 
 class ManagedVehicle(Vehicle):
 
-    def __init__(self, carla_world: carla.World, role_name: str, comm_handler: "CommunicationHandler"):
+    def __init__(self, carla_world: carla.World, role_name: str, comm_handler: "CommunicationHandler", carla_map: carla.Map):
         super(ManagedVehicle, self).__init__(carla_world, comm_handler)
         self.front_vehicles: List[Optional[Vehicle]] = []
         self.leader_vehicle: Optional[LeaderVehicle] = None
@@ -233,6 +235,7 @@ class ManagedVehicle(Vehicle):
         self.has_front_vehicle = False
         self.target_speed = 0
         self.data_collector: DataCollector = None
+        self.carla_map = carla_map
 
         self.other_vehicles: List["Vehicle"] = []
 
@@ -256,6 +259,9 @@ class ManagedVehicle(Vehicle):
         comm_data.throttle = self.control.throttle
         comm_data.brake = self.control.brake
         comm_data.steering = self.control.steer
+
+        print(f"{self.role_name}, acceleration: {comm_data.acceleration}")
+        print(f"{self.role_name}, speed: {comm_data.speed}")
 
         self.send_communication_data(comm_data)
 
@@ -287,7 +293,7 @@ class ManagedVehicle(Vehicle):
             lambda sensor_data: self.store_sensor_data(sensor_data))
         self.sensors.append(self.obstacle_distance_sensor)
 
-        self.platoon_controller = PlatoonController(self)
+        self.platoon_controller = PlatoonController(self,  self.carla_map)
         self.role_name = f"Follower_{vehicle_number}"
         self.target_speed: float = self.platoon_controller.knowledge.target_speed
         self.data_collector = DataCollector(self.platoon_controller.knowledge, self)

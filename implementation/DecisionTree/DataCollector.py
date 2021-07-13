@@ -32,10 +32,15 @@ class DataCollector(object):
         self.leader_throttle = []
         self.front_brake = []
         self.front_throttle = []
+        self.ego_brake = []
+        self.ego_throttle = []
 
         self.ego_acceleration = []
         self.front_acceleration = []
         self.leader_acceleration = []
+
+        self.current_controller = []
+        self.is_safe = []
 
         self.timestamp = []
 
@@ -90,15 +95,15 @@ class DataCollector(object):
         if self.knowledge.front_vehicle_id in data.other_vehicles:
             front_vehicle = data.other_vehicles[self.knowledge.front_vehicle_id]
             if front_vehicle.acceleration_tuple[1] == FailureType.no_failure:
-                front_vehicle_acc = "%.4f" % front_vehicle.acceleration_tuple[0]
+                front_vehicle_acc = float("%.4f" % front_vehicle.acceleration_tuple[0])
             else:
-                front_vehicle_acc = "%.4f" % front_vehicle.measured_acceleration_tuple[0]
+                front_vehicle_acc = float("%.4f" % front_vehicle.measured_acceleration_tuple[0])
             if front_vehicle.speed_tuple[1] == FailureType.no_failure:
-                front_vehicle_speed = "%.4f" % front_vehicle.speed_tuple[0]
+                front_vehicle_speed = float("%.4f" % front_vehicle.speed_tuple[0])
             else:
-                front_vehicle_speed = "%.4f" % front_vehicle.measured_speed_tuple[0]
-            front_vehicle_throttle = "%.4f" % front_vehicle.throttle
-            front_vehicle_brake = "%.4f" % front_vehicle.brake
+                front_vehicle_speed = float("%.4f" % front_vehicle.measured_speed_tuple[0])
+            front_vehicle_throttle = float("%.4f" % front_vehicle.throttle)
+            front_vehicle_brake = float("%.4f" % front_vehicle.brake)
             fvs_failure = front_vehicle.speed_tuple[1]
             fva_failure = front_vehicle.acceleration_tuple[1]
         else:
@@ -114,15 +119,15 @@ class DataCollector(object):
         if self.knowledge.leader_id in data.other_vehicles:
             leader_vehicle = data.other_vehicles[self.knowledge.leader_id]
             if leader_vehicle.acceleration_tuple[1] == FailureType.no_failure:
-                leader_acc = "%.4f" % leader_vehicle.acceleration_tuple[0]
+                leader_acc = float("%.4f" % leader_vehicle.acceleration_tuple[0])
             else:
-                leader_acc = "%.4f" % leader_vehicle.measured_acceleration_tuple[0]
+                leader_acc = float("%.4f" % leader_vehicle.measured_acceleration_tuple[0])
             if leader_vehicle.speed_tuple[1] == FailureType.no_failure:
-                leader_speed = "%.4f" % leader_vehicle.speed_tuple[0]
+                leader_speed = float("%.4f" % leader_vehicle.speed_tuple[0])
             else:
-                leader_speed = "%.4f" % leader_vehicle.measured_speed_tuple[0]
-            leader_throttle = "%.4f" % leader_vehicle.throttle
-            leader_brake = "%.4f" % leader_vehicle.brake
+                leader_speed = float("%.4f" % leader_vehicle.measured_speed_tuple[0])
+            leader_throttle = float("%.4f" % leader_vehicle.throttle)
+            leader_brake = float("%.4f" % leader_vehicle.brake)
             lvs_failure = leader_vehicle.speed_tuple[1]
             lva_failure = leader_vehicle.acceleration_tuple[1]
         else:
@@ -151,6 +156,13 @@ class DataCollector(object):
         distance_error = float("%.4f" % data.distance_error)
         edf = data.ego_distance_tuple[1]
 
+        safety_space = 2 * distance_to_front * 11
+        speed_square = ego_speed ** 2 - front_vehicle_speed ** 2
+
+        is_safe = safety_space > speed_square
+
+        ego_control = self.ego_vehicle.ego_vehicle.get_control()
+
         self.distance.append(distance_to_front)
         self.desired_distance.append(des_distance)
         self.distance_error.append(des_distance - distance_to_front)
@@ -163,10 +175,16 @@ class DataCollector(object):
         self.front_throttle.append(front_vehicle_throttle)
         self.leader_brake.append(leader_brake)
         self.leader_throttle.append(leader_throttle)
+        self.ego_throttle.append(ego_control.throttle)
+        self.ego_brake.append(ego_control.brake)
 
         self.ego_acceleration.append(ego_acc)
         self.leader_acceleration.append(leader_acc)
         self.front_acceleration.append(front_vehicle_acc)
+
+        self._append_controller(current_controller)
+        self._append_safety_state(is_safe)
+        print(f"{self.ego_vehicle.role_name} is safe: ", is_safe)
 
         self.timestamp.append(timestamp.elapsed_seconds)
 
@@ -222,10 +240,10 @@ class DataCollector(object):
             if edf == FailureType.no_front_vehicle:
                 technique = AdaptationTechnique.NO_ADAPTATION
             elif dist_error < 2 and front_over_limit < 3:
-                # front vehicle is driving too fast
+                # front vehicle is driving in acceptable speed limit deviation
                 technique = AdaptationTechnique.STRUCTURAL
             else:
-                # front vehicle is driving in acceptable speed limit deviation
+                # front vehicle is driving too fast
                 technique = AdaptationTechnique.NO_ADAPTATION
 
         elif current_controller == ControllerType.DISTANCE:
@@ -251,7 +269,7 @@ class DataCollector(object):
             # S0
             if speed_dif >= 0:
                 # C3
-                if dist_error < -0.5:
+                if dist_error < -0.75:
                     print("S0, C3, switch to brake")
                     technique = AdaptationTechnique.STRUCTURAL
                 # C0 - C2
@@ -292,6 +310,8 @@ class DataCollector(object):
                 if dist_error > -0.4:
                     print("S3, C01")
                     technique = AdaptationTechnique.STRUCTURAL
+                elif dist_error > 0.2:
+                    technique = AdaptationTechnique.NO_ADAPTATION
                 # C2, C3
                 else:
                     technique = AdaptationTechnique.CONTEXT
@@ -305,9 +325,9 @@ class DataCollector(object):
         elif current_controller == ControllerType.BRAKE:
             if edf == FailureType.no_front_vehicle:
                 technique = AdaptationTechnique.STRUCTURAL
-            if dist_error > 0.1:
+            elif dist_error > 0.2 and speed_dif < 5 and front_brake == 0:
                 technique = AdaptationTechnique.STRUCTURAL
-            elif dist_error > 0 and front_brake > 0.9 or acc_front < -9:
+            elif dist_error < 0 and front_brake > 0.9 or acc_front < -9:
                 technique = AdaptationTechnique.PARAMETER
         else:
             technique = AdaptationTechnique.NO_ADAPTATION
@@ -341,6 +361,7 @@ class DataCollector(object):
         self.front_acceleration = [float(val) for val in self.front_acceleration]
         self.leader_acceleration = [float(val) for val in self.leader_acceleration]
 
+
         """
         pyp.plot(self.timestamp, self.ego_speed, label="Ego Speed")
         pyp.plot(self.timestamp, self.front_speed, label="Front speed")
@@ -351,43 +372,59 @@ class DataCollector(object):
         pyp.gcf().autofmt_xdate()
         """
 
-        fig1, ax = pyp.subplots(4, figsize=(20, 20))
+        fig1, ax = pyp.subplots(3 , 2) # figsize=(20, 20))
         pyp.subplots_adjust(hspace=0.35)
-        ax[0].plot(self.timestamp, self.desired_distance, label="Desired distance")
-        ax[0].plot(self.timestamp, self.distance, label="Distance")
-        ax[0].plot(self.timestamp, self.distance_error, label="Distance error")
-        ax[0].set_xlabel("Time (s)")
-        ax[0].set_ylabel("Distance [m]")
-        ax[0].set_title(f"Distance comparison {self.ego_vehicle.role_name}")
-        ax[0].legend()
+        ax[0, 0].plot(self.timestamp, self.desired_distance, label="Desired distance")
+        ax[0, 0].plot(self.timestamp, self.distance, label="Distance")
+        ax[0, 0].plot(self.timestamp, self.distance_error, label="Distance error")
+        ax[0, 0].set_xlabel("Time (s)")
+        ax[0, 0].set_ylabel("Distance [m]")
+        ax[0, 0].set_title(f"Distance comparison {self.ego_vehicle.role_name}")
+        ax[0, 0].legend()
 
-        ax[1].plot(self.timestamp, self.ego_speed, label=f"Speed {self.ego_vehicle.role_name}")
-        ax[1].plot(self.timestamp, self.leader_speed, label="Speed Leader")
+        ax[0, 1].plot(self.timestamp, self.ego_speed, label=f"Speed {self.ego_vehicle.role_name}")
+        ax[0, 1].plot(self.timestamp, self.leader_speed, label="Speed Leader")
         if self.ego_vehicle.role_name == "Follower_1":
-            ax[1].plot(self.timestamp, self.front_speed, label="Speed Front")
-        ax[1].set_xlabel("Time (s)")
-        ax[1].set_ylabel("Speed [m/s]")
-        ax[1].set_title(f"Speed comparison {self.ego_vehicle.role_name}")
-        ax[1].legend()
+            ax[0, 1].plot(self.timestamp, self.front_speed, label="Speed Front")
+        ax[0, 1].set_xlabel("Time (s)")
+        ax[0, 1].set_ylabel("Speed [m/s]")
+        ax[0, 1].set_title(f"Speed comparison {self.ego_vehicle.role_name}")
+        ax[0, 1].legend()
 
         if self.ego_vehicle.role_name == "Follower_1":
-            ax[2].plot(self.timestamp, self.front_brake, label="Brake value front")
-            ax[2].plot(self.timestamp, self.front_throttle, label="Throttle value front")
-        ax[2].plot(self.timestamp, self.leader_brake, label="Brake value Leader")
-        ax[2].plot(self.timestamp, self.leader_throttle, label="Throttle value Leader")
-        ax[2].set_xlabel("Time (s)")
-        ax[2].set_ylabel("Throttle/Brake value")
-        ax[2].set_title(f"Throttle/ Brake comparison {self.ego_vehicle.role_name}")
-        ax[2].legend()
+            ax[1, 0].plot(self.timestamp, self.front_brake, label="Brake value front")
+            ax[1, 0].plot(self.timestamp, self.front_throttle, label="Throttle value front")
+        ax[1, 0].plot(self.timestamp, self.leader_brake, label="Brake value Leader")
+        ax[1, 0].plot(self.timestamp, self.leader_throttle, label="Throttle value Leader")
+        ax[1, 0].plot(self.timestamp, self.ego_brake, label="Brake value ego vehicle")
+        ax[1, 0].plot(self.timestamp, self.ego_throttle, label="Throttle value ego vehicle")
+        ax[1, 0].set_xlabel("Time (s)")
+        ax[1, 0].set_ylabel("Throttle/Brake value")
+        ax[1, 0].set_title(f"Throttle/ Brake comparison {self.ego_vehicle.role_name}")
+        ax[1, 0].legend()
 
-        ax[3].plot(self.timestamp, self.ego_acceleration, label=f"Acceleration {self.ego_vehicle.role_name}")
+        ax[1, 1].plot(self.timestamp, self.ego_acceleration, label=f"Acceleration {self.ego_vehicle.role_name}")
         if self.ego_vehicle.role_name == "Follower_1":
-            ax[3].plot(self.timestamp, self.front_acceleration, label="Acceleration Front")
-        ax[3].plot(self.timestamp, self.leader_acceleration, label="Acceleration Leader")
-        ax[3].set_xlabel("Time (s)")
-        ax[3].set_ylabel("Acceleration in [m/s²]")
-        ax[3].set_title(f"Acceleration comparison {self.ego_vehicle.role_name}")
-        ax[3].legend()
+            ax[1, 1].plot(self.timestamp, self.front_acceleration, label="Acceleration Front")
+        ax[1, 1].plot(self.timestamp, self.leader_acceleration, label="Acceleration Leader")
+        ax[1, 1].set_xlabel("Time (s)")
+        ax[1, 1].set_ylabel("Acceleration in [m/s²]")
+        ax[1, 1].set_title(f"Acceleration comparison {self.ego_vehicle.role_name}")
+        ax[1, 1].legend()
+
+        ax[2, 0].set_yticklabels(["Speed", "Distance", "Brake"])
+        ax[2, 0].plot(self.timestamp, self.current_controller)
+        ax[2, 0].set_xlabel("Time (s)")
+        ax[2, 0].set_ylabel("Current Controller")
+        ax[2, 0].set_title(f"Current controller {self.ego_vehicle.role_name}")
+        ax[2, 0].set_yticks([0, 1, 2])
+
+        ax[2, 1].set_yticklabels(["", "Safe", "Unsafe", ""])
+        ax[2, 1].set_yticks([-1, 0, 1, 2])
+        ax[2, 1].plot(self.timestamp, self.is_safe)
+        ax[2, 1].set_xlabel("Time (s)")
+        ax[2, 1].set_title(f"Safety state {self.ego_vehicle.role_name}")
+
 
         pyp.savefig(f"data_plot_{self.ego_vehicle.role_name}")
 
@@ -435,3 +472,17 @@ class DataCollector(object):
                 if vehicle_data.measured_acceleration_tuple[0] > max_acc:
                     max_acc = vehicle_data.measured_acceleration_tuple[0]
         return max_acc
+
+    def _append_controller(self, controller: ControllerType) -> None:
+        if controller == ControllerType.SPEED:
+            self.current_controller.append(0)
+        elif controller == ControllerType.DISTANCE:
+            self.current_controller.append(1)
+        elif controller == ControllerType.BRAKE:
+            self.current_controller.append(2)
+
+    def _append_safety_state(self, state: bool) -> None:
+        if state:
+            self.is_safe.append(0)
+        else:
+            self.is_safe.append(1)
