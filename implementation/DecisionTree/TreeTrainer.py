@@ -26,7 +26,7 @@ class TreeTrainer(object):
         #self.test_file = pandas.read_csv("Connection_Failure_Data_Set.csv")
         weights = self.balance_classes()
         self.decision_tree = DecisionTreeClassifier(min_samples_leaf=15, class_weight=weights, min_samples_split=15, min_weight_fraction_leaf=0.0,
-                                                    min_impurity_decrease=0.001, max_depth=10)
+                                                    min_impurity_decrease=0.001)
         #self.decision_tree = DecisionTreeClassifier()
         file = self.map_data(file)
         #self.test_file = self.map_data(self.test_file)
@@ -127,6 +127,9 @@ class TreeTrainer(object):
                     if current_controller == ControllerType.SPEED:
                         controller_max_acc = 10
                         controller_max_dec = -3.5
+                    elif current_controller == ControllerType.BRAKE:
+                        controller_max_acc = 0
+                        controller_max_dec = -13
                     speed_dif = float(row[4])
                     over_limit = float(row[6])
                     dist_error = float(row[7])
@@ -180,7 +183,7 @@ class TreeTrainer(object):
                         # PS2
                         if edf == FailureType.no_front_vehicle:
                             technique = AdaptationTechnique.NO_ADAPTATION
-                        elif dist_error < 2 and front_over_limit < 3 and over_limit < 3:
+                        elif dist_error < 2 and (front_over_limit < 3 or over_limit < 3):
                             technique = AdaptationTechnique.STRUCTURAL
                         else:
                             technique = AdaptationTechnique.NO_ADAPTATION
@@ -265,7 +268,7 @@ class TreeTrainer(object):
                     elif current_controller == ControllerType.BRAKE:
                         if edf == FailureType.no_front_vehicle:
                             technique = AdaptationTechnique.STRUCTURAL
-                        elif dist_error > 0.2 and speed_dif < 5 and front_brake == 0:
+                        elif dist_error > 0.2 and speed_dif > 3 and front_brake <= 0:
                             technique = AdaptationTechnique.STRUCTURAL
                         elif dist_error < 0 and front_brake > 0.9 or acc_front < -9:
                             technique = AdaptationTechnique.PARAMETER

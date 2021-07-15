@@ -20,6 +20,8 @@ class Knowledge(object):
         self.cont_max_dec: float = -5
         self.timegap: float = 0.5
 
+        self.increase_timegap: bool = False
+
     def get_current_simulation_step(self) -> EnvironmentKnowledge:
         if self.simulation_step_history[0] is not None:
             return self.simulation_step_history[0]

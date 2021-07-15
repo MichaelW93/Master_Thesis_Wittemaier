@@ -5,7 +5,7 @@ from typing import Optional, List, TYPE_CHECKING, Union
 from implementation.vehicle.carla_steering_algorithm import CarlaSteeringAlgorithm
 from implementation.vehicle.controller import SpeedController, DistanceController, BrakeController, PIDController
 from implementation.configuration_parameter import *
-from implementation.data_classes import EnvironmentKnowledge, SimulationState, CommunicationData
+from implementation.data_classes import EnvironmentKnowledge, SimulationState, CommunicationData, FailureType, OtherVehicle
 from implementation.platoon_controller.platoon_controller import PlatoonController
 from implementation.platoon_controller.monitor.monitor import Monitor
 from implementation.util import *
@@ -89,11 +89,12 @@ class Vehicle(object):
 
 class EnvironmentVehicle(Vehicle):
 
-    def __init__(self, carla_world, role_name, comm_handler):
+    def __init__(self, carla_world, role_name, comm_handler, leader):
         super(EnvironmentVehicle, self).__init__(carla_world, comm_handler)
         self.controller = None
         self.steering_controller: Optional[CarlaSteeringAlgorithm] = None
         self.role_name = role_name
+        self.leading_vehicle: LeaderVehicle = leader
 
     def setup_vehicle(self):
         args_long_dict = {
@@ -103,20 +104,62 @@ class EnvironmentVehicle(Vehicle):
             'dt': 1 / CARLA_SERVER_FPS
         }
         self.steering_controller = CarlaSteeringAlgorithm(self.carla_world.get_map(), self.ego_vehicle)
-        self.controller = SpeedController(self.ego_vehicle)
+        self.controller = DistanceController(self.ego_vehicle)
+        self.controller.timegap = 0.2
+        self.controller.max_acceleration = 12
+        self.controller.max_deceleration = -12
+
+        blueprint_library = self.carla_world.get_blueprint_library()
+        blueprint = blueprint_library.find("sensor.other.imu")
+        self.imu_sensor = self.carla_world.spawn_actor(blueprint, carla.Transform(), self.ego_vehicle)
+        self.imu_sensor.listen(lambda sensor_data: self.store_sensor_data(sensor_data))
+        self.sensors.append(self.imu_sensor)
 
     def run_step(self, target_speed: float) -> None:
         """Main loop for the Vehicle. Handles the calculation of the vehicle control.
         :param target_speed: vehicles target speed in [km/h]"""
 
+        data = self.get_sensor_data()
+        data_dict = self.comm_handler.vehicles_data[1]
+        if self.leading_vehicle.ego_vehicle.id in data_dict:
+            leader_data: CommunicationData = data_dict[self.leading_vehicle.ego_vehicle.id]
+        else:
+            leader_data = CommunicationData()
+
+        acceleration = 0
+        if len(data)>0:
+            if isinstance(data[0], carla.IMUMeasurement):
+                limits = (-99.9, 99.9)
+                acceleration = max(limits[0], min(limits[1], data[0].accelerometer.x))
+
         if self.controller is not None:
             env_knowledge = EnvironmentKnowledge()
+            env_knowledge.ego_speed_tuple = (velocity_to_speed(self.ego_vehicle.get_velocity()), FailureType.no_failure)
+            other_vehicle = OtherVehicle(self.leading_vehicle.ego_vehicle.id)
+            other_vehicle.speed_tuple = (leader_data.speed, FailureType.no_failure)
+            other_vehicle.acceleration_tuple = (leader_data.acceleration, FailureType.no_failure)
+            other_vehicle.is_front_vehicle = True
+            env_knowledge.other_vehicles[self.leading_vehicle.ego_vehicle.id] = other_vehicle
+            env_knowledge.ego_distance_tuple = self.get_distance()
             env_knowledge.speed_limit = target_speed
+            print(env_knowledge)
             self.control = self.controller.run_step(env_knowledge)
+            print(self.control)
         if self.steering_controller is not None:
             self.control.steer = self.steering_controller.goToNextTargetLocation()
         if self.control is not None:
             self.ego_vehicle.apply_control(self.control)
+
+        comm_data = CommunicationData()
+        comm_data.leader_id = -1
+        comm_data.front_id = -1
+        comm_data.vehicle_id = self.ego_vehicle.id
+        comm_data.acceleration = acceleration
+        comm_data.speed = velocity_to_speed(self.ego_vehicle.get_velocity())
+        comm_data.throttle = self.control.throttle
+        comm_data.brake = self.control.brake
+
+        self.send_communication_data(comm_data)
 
     def switch_lane_right(self):
         waypoint = self.carla_world.get_map().get_waypoint(self.ego_vehicle.get_location(), project_to_road=True,
@@ -125,10 +168,24 @@ class EnvironmentVehicle(Vehicle):
         next_waypoint = right_lane_waypoint.next(40)
         self.steering_controller.set_next_waypoint(next_waypoint)
 
+    def get_distance(self):
+        ego_pos = self.ego_vehicle.get_location()
+        leader_pos = self.leading_vehicle.ego_vehicle.get_location()
+
+        dist = math.sqrt((ego_pos.x - leader_pos.x) ** 2 +
+                         (ego_pos.y - leader_pos.y) ** 2 +
+                         (ego_pos.z - leader_pos.z) ** 2)
+
+        dist_to_front = dist - (self.ego_vehicle.bounding_box.extent.x * 2) + 0.5
+
+        dist_tuple = (dist_to_front, FailureType.no_failure)
+        return dist_tuple
+
     def destroy(self):
         if self.ego_vehicle is not None and self.ego_vehicle.is_alive:
             self.ego_vehicle.destroy()
             self.ego_vehicle = None
+        self.imu_sensor.destroy()
 
 
 class LeaderVehicle(Vehicle):

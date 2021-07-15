@@ -239,7 +239,7 @@ class DataCollector(object):
             # PS2
             if edf == FailureType.no_front_vehicle:
                 technique = AdaptationTechnique.NO_ADAPTATION
-            elif dist_error < 2 and front_over_limit < 3:
+            elif dist_error < 2 and (front_over_limit < 3 or over_limit < 3):
                 # front vehicle is driving in acceptable speed limit deviation
                 technique = AdaptationTechnique.STRUCTURAL
             else:
@@ -327,7 +327,7 @@ class DataCollector(object):
         elif current_controller == ControllerType.BRAKE:
             if edf == FailureType.no_front_vehicle:
                 technique = AdaptationTechnique.STRUCTURAL
-            elif dist_error > 0.2 and speed_dif < 5 and front_brake == 0:
+            elif dist_error > 0.2 and speed_dif > 3 and front_brake <= 0:
                 technique = AdaptationTechnique.STRUCTURAL
             elif dist_error < 0 and front_brake > 0.9 or acc_front < -9:
                 technique = AdaptationTechnique.PARAMETER

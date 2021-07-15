@@ -71,6 +71,7 @@ class CarlaControlClient(object):
         self.communication_handler.setup()
         self.spawn_leader()
         self.spawn_managed_vehicles()
+        self.spawn_environment_vehicle()
         self.scenario_controller.setup(self.leader_vehicle, self.managed_vehicles)
 
         transform = carla.Transform(
@@ -199,10 +200,17 @@ class CarlaControlClient(object):
             self.carla_world.tick()
             self.communication_handler.vehicles[vehicle.ego_vehicle.id] = vehicle
 
-    def spawn_environment_vehicle(self, transform: carla.Transform) -> EnvironmentVehicle:
-        environment_vehicle = EnvironmentVehicle(self.carla_world, "Cut In Vehicle 1", self.communication_handler)
+    def spawn_environment_vehicle(self) -> EnvironmentVehicle:
+        spawn_point = carla.Transform()
+        spawn_point.location.x = MANAGED_VEHICLE_SPAWN_LOCATION_X
+        spawn_point.location.y = MANAGED_VEHICLE_SPAWN_LOCATION_Y - 3
+        spawn_point.location.z = MANAGED_VEHICLE_SPAWN_LOCATION_Z
+
+        spawn_point.rotation.yaw = 0
+
+        environment_vehicle = EnvironmentVehicle(self.carla_world, "Cut In Vehicle 1", self.communication_handler, self.leader_vehicle)
         self.environment_vehicles.append(environment_vehicle)
-        environment_vehicle.spawn_vehicle(transform, "vehicle.audi.tt", "0,255,0")
+        environment_vehicle.spawn_vehicle(spawn_point, "vehicle.audi.tt", "0,255,0")
         environment_vehicle.setup_vehicle()
         self.environment_vehicles.append(environment_vehicle)
         for vehicle in self.managed_vehicles:
@@ -210,6 +218,9 @@ class CarlaControlClient(object):
         return environment_vehicle
 
     def __run_cut_in_scenario(self):
+
+        self.environment_vehicles[1].switch_lane_right()
+        return
         spawn_point = carla.Transform()
         spawn_point.location.x = 19
         spawn_point.location.y = -205
@@ -273,6 +284,9 @@ class CarlaControlClient(object):
                                                                        self.simulation_state.weather,
                                                                        self.simulation_state.speed_limit,
                                                                        self.simulation_state)
+                for vehicle_number in range(len(self.environment_vehicles)):
+                    if self.environment_vehicles[vehicle_number] is not None:
+                        self.environment_vehicles[vehicle_number].run_step(self.simulation_state.environment_vehicles_target_speed)
             except KeyboardInterrupt:
                 running = False
                 self.exit_client()

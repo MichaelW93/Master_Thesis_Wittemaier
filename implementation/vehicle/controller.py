@@ -72,6 +72,7 @@ class DistanceController(Controller):
 
         des_distance = r + self.timegap * speed_ego
         error = distance - des_distance
+        print("Distance error at controller: ", error)
         # acc = 0
 
         acc_ego = self.k3 * min(acc) + self.k2 * (speed_front - speed_ego) + self.k1 * error
@@ -79,6 +80,8 @@ class DistanceController(Controller):
             acc_ego = min(self.max_acceleration, acc_ego)
         else:
             acc_ego = max(self.max_deceleration, acc_ego)
+
+        #print(self.ego_vehicle.role_name, ": Planned acceleration: ", acc_ego)
 
         if acc_ego > 0:
             ego_target_speed = ((0.5 * acc_ego * timestep * timestep + speed_ego) * 3.6) + 0.55

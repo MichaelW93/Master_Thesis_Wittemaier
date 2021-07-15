@@ -135,7 +135,6 @@ class Monitor(object):
                 if ego_lane_id != vehicle_lane_id:
                     print("not on the same lane")
                     dist = 200
-                print(dist)
 
             if dist < dist_to_front:
                 dist_to_front = dist
@@ -146,8 +145,6 @@ class Monitor(object):
         if dist_to_front > 100 or dist_to_front < 0:
             dist_to_front = -1
             front_id = -1
-
-        print(dist_to_front, "for vehicle", self.ego_vehicle.role_name)
 
         return dist_to_front, front_id
 
@@ -256,10 +253,10 @@ class Monitor(object):
                         environment_knowledge.speed_diff_to_front = vehicle.speed_tuple[0] - ego_speed
                         environment_knowledge.front_over_limit = (vehicle.speed_tuple[0]*3.6) - environment_knowledge.speed_limit
 
-                    if vehicle.platoonable:
-                        self.knowledge.timegap = 0.5
-                    else:
-                        self.knowledge.timegap = 1.5
+                    #if vehicle.platoonable:
+                    #    self.knowledge.timegap = 0.5
+                    #else:
+                    #    self.knowledge.timegap = 1.5
 
                 if vehicle.is_leader:
                     if vehicle.speed_tuple[1] == FailureType.no_failure:
@@ -298,10 +295,6 @@ class Monitor(object):
                         if vehicle.is_leader:
                             environment_knowledge.speed_diff_to_leader = environment_knowledge.speed_diff_to_front
 
-                        print(f"{self.ego_vehicle.role_name} measured acceleration: {vehicle.measured_acceleration_tuple[0]}")
-                        print(
-                            f"{self.ego_vehicle.role_name} measured speed: {vehicle.measured_speed_tuple[0]}")
-
         if environment_knowledge.ego_distance_tuple[1] == FailureType.no_front_vehicle:
             environment_knowledge.front_over_limit = 0
             environment_knowledge.speed_diff_to_front = 100
@@ -314,9 +307,6 @@ class Monitor(object):
             environment_knowledge.distance_error = abs(environment_knowledge.ego_distance_tuple[0] / environment_knowledge.desired_distance) - 1
         else:
             environment_knowledge.distance_error = 0
-
-        print(f"{self.ego_vehicle.role_name} current timegap: {self.knowledge.timegap}")
-        print()
 
         return environment_knowledge
 
@@ -517,6 +507,11 @@ class Monitor(object):
         return other_speed
         """
 
+        data_dict = self.ego_vehicle.comm_handler.vehicles_data[1]
+        vehicle_data = data_dict[self.knowledge.front_vehicle_id]
+        speed_tuple = (vehicle_data.speed, FailureType.no_failure)
+        return speed_tuple
+
         if measured_acceleration_tuple[1] == FailureType.no_failure and previous_speed_tuple[1] == FailureType.no_failure:
             fail_type = FailureType.no_failure
         else:
@@ -546,6 +541,10 @@ class Monitor(object):
             acc = (((current_speed - previous_speed) / timegap), FailureType.no_failure)
         return acc
         """
+        data_dict = self.ego_vehicle.comm_handler.vehicles_data[1]
+        vehicle_data = data_dict[self.knowledge.front_vehicle_id]
+        acceleration_tuple = (vehicle_data.acceleration, FailureType.no_failure)
+        return acceleration_tuple
         if current_dist_tuple[1] == FailureType.no_failure:
             fail_type = FailureType.no_failure
         else:
