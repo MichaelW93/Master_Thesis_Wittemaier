@@ -25,14 +25,14 @@ class TreeTrainer(object):
         file = pandas.read_csv("cleaned_file.csv")
         #self.test_file = pandas.read_csv("Connection_Failure_Data_Set.csv")
         weights = self.balance_classes()
-        self.decision_tree = DecisionTreeClassifier(min_samples_leaf=15, class_weight=weights, min_samples_split=15, min_weight_fraction_leaf=0.0,
-                                                    min_impurity_decrease=0.001)
+        self.decision_tree = DecisionTreeClassifier(min_samples_leaf=25, class_weight=weights, min_samples_split=25, min_weight_fraction_leaf=0.001,
+                                                    min_impurity_decrease=0.001, criterion="entropy")
         #self.decision_tree = DecisionTreeClassifier()
         file = self.map_data(file)
         #self.test_file = self.map_data(self.test_file)
         self.features = None
         x, y = self.prepare_data(file)
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.1)
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3)
 
         self.train_tree(x_train, y_train)
 
