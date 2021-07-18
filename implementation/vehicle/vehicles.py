@@ -142,9 +142,7 @@ class EnvironmentVehicle(Vehicle):
             env_knowledge.other_vehicles[self.leading_vehicle.ego_vehicle.id] = other_vehicle
             env_knowledge.ego_distance_tuple = self.get_distance()
             env_knowledge.speed_limit = target_speed
-            print(env_knowledge)
             self.control = self.controller.run_step(env_knowledge)
-            print(self.control)
         if self.steering_controller is not None:
             self.control.steer = self.steering_controller.goToNextTargetLocation()
         if self.control is not None:
@@ -243,6 +241,8 @@ class LeaderVehicle(Vehicle):
             self.control.brake = random.uniform(0.1, 0.2)
             self.control.throttle = 0
 
+        print("Throttle leader: ", self.control.throttle)
+
         comm_data = CommunicationData()
         comm_data.leader_id = -1
         comm_data.front_id = -1
@@ -316,9 +316,6 @@ class ManagedVehicle(Vehicle):
         comm_data.throttle = self.control.throttle
         comm_data.brake = self.control.brake
         comm_data.steering = self.control.steer
-
-        print(f"{self.role_name}, acceleration: {comm_data.acceleration}")
-        print(f"{self.role_name}, speed: {comm_data.speed}")
 
         self.send_communication_data(comm_data)
 

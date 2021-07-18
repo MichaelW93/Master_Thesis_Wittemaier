@@ -138,6 +138,7 @@ class TreeTrainer(object):
                     faf = self.__create_failure_type(row[11])
                     lsf = self.__create_failure_type(row[15])
                     laf = self.__create_failure_type(row[17])
+                    front_throttle = float(row[12])
                     front_brake = float(row[13])
                     old_technique = self.__create_adaptation_technique(row[24])
 
@@ -171,7 +172,12 @@ class TreeTrainer(object):
                         faf = FailureType.omission
                         counter += 1
                     else:
-                        front_throttle = row[12]
+                        front_throttle = float(row[12])
+
+                    max_throttle = max(front_throttle, float(row[18]), 0)
+                    max_brake = max(front_brake, float(row[19]), 0)
+                    max_acc = max(acc_front, float(row[16]), 0)
+                    max_dec = min(acc_front, float(row[16]), 0)
 
                     if speed_dif == 100 and edf == FailureType.no_failure:
                         counter += 1
@@ -183,7 +189,7 @@ class TreeTrainer(object):
                         # PS2
                         if edf == FailureType.no_front_vehicle:
                             technique = AdaptationTechnique.NO_ADAPTATION
-                        elif dist_error < 2 and (front_over_limit < 3 or over_limit < 3):
+                        elif dist_error < 1 and (front_over_limit < 3 and over_limit < 3):
                             technique = AdaptationTechnique.STRUCTURAL
                         else:
                             technique = AdaptationTechnique.NO_ADAPTATION
@@ -206,9 +212,7 @@ class TreeTrainer(object):
                             elif faf == FailureType.omission:
                                 technique = AdaptationTechnique.PARAMETER
 
-                        if over_limit > 3:
-                            technique = AdaptationTechnique.STRUCTURAL
-                        elif front_over_limit > 3:
+                        if over_limit > 3 or front_over_limit > 3:
                             technique = AdaptationTechnique.STRUCTURAL
 
                         # S0
@@ -262,15 +266,15 @@ class TreeTrainer(object):
                         if dist_error < 0 and acc_front < -10.5 or front_brake > 0.9:
                             technique = AdaptationTechnique.CONTEXT
 
-                        if dist_error > 2 and front_over_limit < 0:
+                        if dist_error > 1:
                             technique = AdaptationTechnique.STRUCTURAL
 
                     elif current_controller == ControllerType.BRAKE:
                         if edf == FailureType.no_front_vehicle:
                             technique = AdaptationTechnique.STRUCTURAL
-                        elif dist_error > 0.2 and speed_dif > 3 and front_brake <= 0:
+                        elif dist_error > 0.1 and speed_dif > 1 and front_brake <= 0:
                             technique = AdaptationTechnique.STRUCTURAL
-                        elif dist_error < 0 and front_brake > 0.9 or acc_front < -9:
+                        elif dist_error < 0 and (front_brake > 0.9 or acc_front < -10.5 or speed_dif < -15/3.6):
                             technique = AdaptationTechnique.PARAMETER
 
                     if technique is None:
@@ -287,7 +291,7 @@ class TreeTrainer(object):
                             dist_error, edf,
                             fsf, row[10], faf, front_throttle, front_brake, front_over_limit,
                             lsf, row[16], laf, row[18], row[19],
-                            row[20], row[21], row[22], row[23],
+                            max_acc, max_dec, max_throttle, max_brake,
                             technique]
 
                     writer.writerow(data)

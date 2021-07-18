@@ -90,7 +90,7 @@ class Analyzer(object):
         max_throttle = analyzer_input.max_throttle
         max_brake = analyzer_input.max_brake
 
-        front_over_limit = speed_over_limit + speed_diff_to_front
+        front_over_limit = analyzer_input.front_over_limit
 
         data = [
             [current_controller, contr_max_acc, contr_max_dec,

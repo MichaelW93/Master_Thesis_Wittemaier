@@ -72,7 +72,6 @@ class DistanceController(Controller):
 
         des_distance = r + self.timegap * speed_ego
         error = distance - des_distance
-        print("Distance error at controller: ", error)
         # acc = 0
 
         acc_ego = self.k3 * min(acc) + self.k2 * (speed_front - speed_ego) + self.k1 * error

@@ -156,7 +156,7 @@ class DataCollector(object):
         distance_error = float("%.4f" % data.distance_error)
         edf = data.ego_distance_tuple[1]
 
-        safety_space = 2 * distance_to_front * 11
+        safety_space = (2 * distance_to_front * 11) - (0.2 * 11 * ego_speed)
         speed_square = ego_speed ** 2 - front_vehicle_speed ** 2
 
         is_safe = safety_space > speed_square
@@ -239,7 +239,7 @@ class DataCollector(object):
             # PS2
             if edf == FailureType.no_front_vehicle:
                 technique = AdaptationTechnique.NO_ADAPTATION
-            elif dist_error < 2 and (front_over_limit < 3 or over_limit < 3):
+            elif dist_error < 1 and (front_over_limit < 3 and over_limit < 3):
                 # front vehicle is driving in acceptable speed limit deviation
                 technique = AdaptationTechnique.STRUCTURAL
             else:
@@ -263,9 +263,7 @@ class DataCollector(object):
                         (faf == FailureType.omission):
                     technique = AdaptationTechnique.PARAMETER
 
-            if over_limit > 3:
-                technique = AdaptationTechnique.STRUCTURAL
-            elif front_over_limit > 3:
+            if over_limit > 3 or front_over_limit > 3:
                 technique = AdaptationTechnique.STRUCTURAL
 
             # S0
@@ -318,18 +316,18 @@ class DataCollector(object):
                 else:
                     technique = AdaptationTechnique.CONTEXT
 
-            if dist_error < 0 and acc_front < -9:
+            if dist_error < 0 and acc_front < -10.5 or front_brake > 0.9:
                 technique = AdaptationTechnique.CONTEXT
 
-            if dist_error > 2 and front_over_limit < 0:
+            if dist_error > 1:
                 technique = AdaptationTechnique.STRUCTURAL
 
         elif current_controller == ControllerType.BRAKE:
             if edf == FailureType.no_front_vehicle:
                 technique = AdaptationTechnique.STRUCTURAL
-            elif dist_error > 0.2 and speed_dif > 3 and front_brake <= 0:
+            elif dist_error > 0.1 and speed_dif > 1 and front_brake <= 0:
                 technique = AdaptationTechnique.STRUCTURAL
-            elif dist_error < 0 and front_brake > 0.9 or acc_front < -9:
+            elif dist_error < 0 and front_brake > 0.9 or acc_front < -10.5:
                 technique = AdaptationTechnique.PARAMETER
         else:
             technique = AdaptationTechnique.NO_ADAPTATION

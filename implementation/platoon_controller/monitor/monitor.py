@@ -196,8 +196,6 @@ class Monitor(object):
                                                             timestamp,
                                                             previous_environment_knowledge.timestamp)
 
-        environment_knowledge = self.check_max_values(environment_knowledge)
-
         environment_knowledge.speed_limit = speed_limit
         environment_knowledge.speed_over_limit = ego_speed * 3.6 - environment_knowledge.speed_limit
         environment_knowledge.weather = weather
@@ -301,12 +299,17 @@ class Monitor(object):
             environment_knowledge.speed_diff_to_leader = 100
 
         environment_knowledge.desired_distance = self.__get_min_distance(ego_speed) + self.knowledge.timegap * ego_speed
+        if self.ego_vehicle.role_name == "Follower_0":
+            print("Desired distance = ", environment_knowledge.desired_distance)
+            print("Current set timegap: ", self.knowledge.timegap)
 
         if environment_knowledge.desired_distance is not None and environment_knowledge.desired_distance != 0 and \
                 environment_knowledge.ego_distance_tuple[1] == FailureType.no_failure:
             environment_knowledge.distance_error = abs(environment_knowledge.ego_distance_tuple[0] / environment_knowledge.desired_distance) - 1
         else:
             environment_knowledge.distance_error = 0
+
+        environment_knowledge = self.check_max_values(environment_knowledge)
 
         return environment_knowledge
 
