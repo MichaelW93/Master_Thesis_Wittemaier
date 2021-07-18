@@ -225,9 +225,9 @@ class BrakeController(Controller):
     def __init__(self, ego_vehicle):
         super(BrakeController, self).__init__(ego_vehicle)
 
-        self.k1: float = 0.3
-        self.k2: float = 0.3
-        self.k3: float = 0.08
+        self.k1: float = 0.05
+        self.k2: float = 0.05
+        self.k3: float = -0.07
 
         self.emergency_brake = False
 
@@ -236,36 +236,39 @@ class BrakeController(Controller):
         max_deceleration = env_knowledge.max_dec
         max_brake = env_knowledge.max_brake
 
-        if not self.emergency_brake:
-            dec = []
-            speed_front = 0
-            for _, vehicle in env_knowledge.other_vehicles.items():
+        dec = []
+        speed_front = 0
+        for _, vehicle in env_knowledge.other_vehicles.items():
 
-                if vehicle.acceleration_tuple[1] == FailureType.no_failure:
-                    dec.append(vehicle.acceleration_tuple[0])
+            if vehicle.acceleration_tuple[1] == FailureType.no_failure:
+                dec.append(vehicle.acceleration_tuple[0])
+            else:
+                dec.append(vehicle.measured_acceleration_tuple[0])
+            if vehicle.is_front_vehicle:
+                if vehicle.speed_tuple[1] == FailureType.no_failure:
+                    speed_front = vehicle.speed_tuple[0]
                 else:
-                    dec.append(vehicle.measured_acceleration_tuple[0])
-                if vehicle.is_front_vehicle:
-                    if vehicle.speed_tuple[1] == FailureType.no_failure:
-                        speed_front = vehicle.speed_tuple[0]
-                    else:
-                        speed_front = vehicle.measured_speed_tuple[0]
-            if len(dec) == 0: # placeholder for data creation
-                speed_front = env_knowledge.speed_limit
-                dec.append(env_knowledge.ego_acceleration_tuple[0])
+                    speed_front = vehicle.measured_speed_tuple[0]
+        if len(dec) == 0: # placeholder for data creation
+            speed_front = env_knowledge.speed_limit
+            dec.append(env_knowledge.ego_acceleration_tuple[0])
 
-            speed_ego = env_knowledge.ego_speed_tuple[0]
-            distance = env_knowledge.ego_distance_tuple[0]
+        speed_ego = env_knowledge.ego_speed_tuple[0]
+        distance = env_knowledge.ego_distance_tuple[0]
 
-            des_distance = env_knowledge.desired_distance
+        des_distance = env_knowledge.desired_distance
 
-            error = distance - des_distance
+        error = distance - des_distance
 
-            brake = self.k3 * max(dec) - self.k2 * (speed_front - speed_ego) - self.k1 * error
+        brake = self.k3 * min(dec) - self.k2 * (speed_front - speed_ego) - self.k1 * error
+        print("min dec", min(dec))
+        print("speed diff: ", speed_front - speed_ego)
+        print("dist error: ", error)
+        print(f"Brake value for {self.ego_vehicle.role_name}: {brake}")
 
-            if brake < 0:
-                brake = 0
-        else:
+        if brake < 0:
+            brake = 0
+        if self.emergency_brake:
             print("emergency braking")
             brake = 1
 
@@ -273,7 +276,7 @@ class BrakeController(Controller):
         control.brake = min(brake, 1)
         control.throttle = 0
 
-        print(f"Brake value for {self.ego_vehicle.role_name}: {brake}")
+
 
         return control
 

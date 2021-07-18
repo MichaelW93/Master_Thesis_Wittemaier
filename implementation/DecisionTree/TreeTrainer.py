@@ -25,7 +25,7 @@ class TreeTrainer(object):
         file = pandas.read_csv("cleaned_file.csv")
         #self.test_file = pandas.read_csv("Connection_Failure_Data_Set.csv")
         weights = self.balance_classes()
-        self.decision_tree = DecisionTreeClassifier(min_samples_leaf=25, class_weight=weights, min_samples_split=25, min_weight_fraction_leaf=0.001,
+        self.decision_tree = DecisionTreeClassifier(min_samples_leaf=20, class_weight=weights, min_samples_split=20, min_weight_fraction_leaf=0.001,
                                                     min_impurity_decrease=0.001, criterion="entropy")
         #self.decision_tree = DecisionTreeClassifier()
         file = self.map_data(file)
@@ -274,7 +274,7 @@ class TreeTrainer(object):
                             technique = AdaptationTechnique.STRUCTURAL
                         elif dist_error > 0.1 and speed_dif > 1 and front_brake <= 0:
                             technique = AdaptationTechnique.STRUCTURAL
-                        elif dist_error < 0 and (front_brake > 0.9 or acc_front < -10.5 or speed_dif < -15/3.6):
+                        elif dist_error < -0.2 and (front_brake > 0.9 or acc_front < -10.5 or speed_dif < -15/3.6):
                             technique = AdaptationTechnique.PARAMETER
 
                     if technique is None:

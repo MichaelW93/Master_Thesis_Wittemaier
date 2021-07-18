@@ -59,21 +59,24 @@ class Planner(object):
             if env_knowledge.ego_distance_tuple[1] == FailureType.no_front_vehicle:
                 return Plan.SWITCH_TO_SPEED
             # obey speed limit
-            if env_knowledge.speed_over_limit > 3 or env_knowledge.front_over_limit > 0:
+            if env_knowledge.speed_over_limit > 3 or env_knowledge.front_over_limit > 3:
                 return Plan.SWITCH_TO_SPEED
 
-            if env_knowledge.distance_error < 0:
+            if env_knowledge.distance_error < 0 or env_knowledge.speed_diff_to_front < -10/3.6:
                 return Plan.SWITCH_TO_BRAKE
 
             if env_knowledge.distance_error > 1:
                 return Plan.SWITCH_TO_SPEED
 
         elif controller == ControllerType.SPEED:
-            if front_vehicle.speed_tuple[1] == FailureType.no_failure and \
-                    front_vehicle.acceleration_tuple[1] == FailureType.no_failure:
-                return Plan.SWITCH_TO_CACC
+            if env_knowledge.front_over_limit < 3:
+                if front_vehicle.speed_tuple[1] == FailureType.no_failure and \
+                        front_vehicle.acceleration_tuple[1] == FailureType.no_failure:
+                    return Plan.SWITCH_TO_CACC
+                else:
+                    return Plan.SWITCH_TO_ACC
             else:
-                return Plan.SWITCH_TO_ACC
+                return Plan.NO_CHANGE
 
         elif controller == ControllerType.BRAKE:
             if front_vehicle.speed_tuple[1] == FailureType.no_failure and \
