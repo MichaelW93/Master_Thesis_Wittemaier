@@ -2,13 +2,14 @@ import pandas
 from sklearn import tree, metrics
 import  pydotplus
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 import matplotlib.pyplot as plt
 import matplotlib.image as pltimg
 import csv
 from joblib import dump, load
 from implementation.data_classes import AdaptationTechnique, FailureType
 from implementation.vehicle.controller import ControllerType
+import numpy as np
 
 class TreeTrainer(object):
 
@@ -24,15 +25,17 @@ class TreeTrainer(object):
 
         file = pandas.read_csv("cleaned_file.csv")
         #self.test_file = pandas.read_csv("Connection_Failure_Data_Set.csv")
-        weights = self.balance_classes()
-        self.decision_tree = DecisionTreeClassifier(min_samples_leaf=20, class_weight=weights, min_samples_split=20, min_weight_fraction_leaf=0.001,
-                                                    min_impurity_decrease=0.001, criterion="entropy")
+        self.weights = self.balance_classes()
+        self.decision_tree = DecisionTreeClassifier(min_samples_leaf=20, class_weight=self.weights, min_samples_split=20,
+                                                    min_weight_fraction_leaf=0.001, min_impurity_decrease=0.005,
+                                                   criterion="entropy", max_depth=9)
         #self.decision_tree = DecisionTreeClassifier()
         file = self.map_data(file)
         #self.test_file = self.map_data(self.test_file)
         self.features = None
         x, y = self.prepare_data(file)
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3)
+
 
         self.train_tree(x_train, y_train)
 
@@ -41,6 +44,8 @@ class TreeTrainer(object):
         #x_test_2, y_test_2 = self.prepare_data(self.test_file)
         # y_pred_2 = self.decision_tree.predict(x_test_2)
         print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
+        print("Precision: ", metrics.precision_score(y_test, y_pred, average="micro"))
+        print("Recall: ", metrics.recall_score(y_test, y_pred, average="micro"))
         #print("Accuracy:", metrics.accuracy_score(y_test_2, y_pred_2))
         data = tree.export_graphviz(self.decision_tree, filled=True, out_file=None, feature_names=self.features, class_names=["NO", "PA", "SA", "CA"])
         graph = pydotplus.graph_from_dot_data(data)
@@ -48,6 +53,50 @@ class TreeTrainer(object):
 
         img = pltimg.imread("Connection_Failure_Tree.png")
         imgplot = plt.imshow(img)
+        plt.show()
+
+
+        sm_tree_depths = range(1, 25)
+        sm_cv_scores_mean, sm_cv_scores_std, sm_accuracy_scores = self.run_cross_validation_on_trees(x_train, y_train,
+                                                                                                sm_tree_depths)
+
+        #plotting accuracy
+        self.plot_cross_validation_on_trees(sm_tree_depths, sm_cv_scores_mean, sm_cv_scores_std, sm_accuracy_scores,
+                                       'Accuracy per decision tree depth on training data')
+
+    def run_cross_validation_on_trees(self, X, y, tree_depths, cv=5, scoring='accuracy'):
+        cv_scores_list = []
+        cv_scores_std = []
+        cv_scores_mean = []
+        accuracy_scores = []
+        for depth in tree_depths:
+            tree_model = DecisionTreeClassifier(max_depth=depth, min_samples_leaf=20, class_weight=self.weights, min_samples_split=20, min_weight_fraction_leaf=0.001,
+                                                    min_impurity_decrease=0.001, criterion="entropy")
+            cv_scores = cross_val_score(tree_model, X, y, cv=cv, scoring=scoring)
+            cv_scores_list.append(cv_scores)
+            cv_scores_mean.append(cv_scores.mean())
+            cv_scores_std.append(cv_scores.std())
+            accuracy_scores.append(tree_model.fit(X, y).score(X, y))
+        cv_scores_mean = np.array(cv_scores_mean)
+        cv_scores_std = np.array(cv_scores_std)
+        accuracy_scores = np.array(accuracy_scores)
+        return cv_scores_mean, cv_scores_std, accuracy_scores
+
+
+    # function for plotting cross-validation results
+    def plot_cross_validation_on_trees(self, depths, cv_scores_mean, cv_scores_std, accuracy_scores, title):
+        fig, ax = plt.subplots(1, 1, figsize=(15, 5))
+        ax.plot(depths, cv_scores_mean, '-o', label='mean cross-validation accuracy', alpha=0.9)
+        ax.fill_between(depths, cv_scores_mean - 2 * cv_scores_std, cv_scores_mean + 2 * cv_scores_std, alpha=0.2)
+        ylim = plt.ylim()
+        ax.plot(depths, accuracy_scores, '-*', label='train accuracy', alpha=0.9)
+        ax.set_title(title, fontsize=16)
+        ax.set_xlabel('Tree depth', fontsize=14)
+        ax.set_ylabel('Accuracy', fontsize=14)
+        ax.set_ylim(ylim)
+        ax.set_xticks(depths)
+        ax.legend()
+
         plt.show()
 
     def train_tree(self, x, y):
@@ -141,15 +190,6 @@ class TreeTrainer(object):
                     front_throttle = float(row[12])
                     front_brake = float(row[13])
                     old_technique = self.__create_adaptation_technique(row[24])
-
-                    if old_technique == AdaptationTechnique.NO_ADAPTATION:
-                        self.no += 1
-                    elif old_technique == AdaptationTechnique.PARAMETER:
-                        self.pa += 1
-                    elif old_technique == AdaptationTechnique.STRUCTURAL:
-                        self.sa += 1
-                    elif old_technique == AdaptationTechnique.CONTEXT:
-                        self.ca += 1
 
                     acc_front = float(row[10])
                     front_over_limit = float(row[14])
@@ -282,6 +322,15 @@ class TreeTrainer(object):
 
                     if technique != old_technique:
                         counter += 1
+
+                    if technique == AdaptationTechnique.NO_ADAPTATION:
+                        self.no += 1
+                    elif technique == AdaptationTechnique.PARAMETER:
+                        self.pa += 1
+                    elif technique == AdaptationTechnique.STRUCTURAL:
+                        self.sa += 1
+                    elif technique == AdaptationTechnique.CONTEXT:
+                        self.ca += 1
 
                     current_controller: str = self.__convert_controller_to_string(current_controller)
                     technique: str = self.__convert_technique_to_string(technique)
