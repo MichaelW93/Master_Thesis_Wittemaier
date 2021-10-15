@@ -1,3 +1,11 @@
-Pillow
+pillow
 PySimpleGUI
 tkinter
+sklearn
+pydotplus
+joblib
+matplotlib
+numpy
+pandas
+dataclasses
+pygame
