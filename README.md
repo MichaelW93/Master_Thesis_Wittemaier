@@ -1,34 +1,19 @@
 # Master_Thesis_Wittemaier
 Building an adaptive System which uses Machine Learning
 
-TODO:
-Pygame Window:
-	- add following, switchable camera to each managed vehicle
+Installation:
+1. Install all requirements specified in the requirements.txt:
+	pip3 install -r requirements.txt
 
-Manual control window:
-	- implement control input for varying amount of managed vehicles
+2. Make sure you have an installation of Carla (version >=0.9.9)
+3. Make sure your PYTHONPATH variable includes the carla PythonAPI
+4. add the folder /DAM/dam/implementation to your PYTHONPATH
+	export PYTHONPATH=$PYTHONPATH:~/DAM/dam
 
-Platoon Controller:
-	- basic implementation
+Execution:
+1. Launch the Carla Server
+2. Launch DAM by executing the "carla_control_client.py", located in /DAM/dam/implementation/carla_client
+	python3 carla_control_client.py
 
-Monitor:
-	- basic implementation
-	- fault detection
-
-Analyzer:
-	- basic implementation
-
-Planner:
-	- basic implementation
-
-Executor:
-	- basic implementation
-
-Knowledge:
-	- logger functionality
-	- basic implementation
-	- adaptation goals
-
-Vehicle:
-	- distance controller
-	- different controller options
+Note:
+In case that the carla server takes too long to load the new town, a timeout error will come. Just wait until the server has load the town, and then restart the carla client
